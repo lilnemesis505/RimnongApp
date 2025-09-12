@@ -20,7 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://10.0.2.2/api/auth.php'),
+        Uri.parse('http://10.0.2.2:8000/api/login'),
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },

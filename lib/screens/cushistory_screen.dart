@@ -35,7 +35,7 @@ class _CusHistoryScreenState extends State<CusHistoryScreen> {
       return;
     }
 
-    final url = Uri.parse('http://10.0.2.2/api/fetch_cushistory.php?cus_id=${widget.cusId}');
+    final url = Uri.parse('http://10.0.2.2:8000/api/customers/${widget.cusId}/history');
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {

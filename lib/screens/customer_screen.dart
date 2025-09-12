@@ -39,22 +39,33 @@ class _CustomerScreenState extends State<CustomerScreen> {
   }
 
   Future<void> fetchProducts() async {
-    final response = await http.get(Uri.parse('http://10.0.2.2/api.php'));
-    print('API Response: ${response.body}');
-    if (response.statusCode == 200) {
-      final List<dynamic> data = json.decode(response.body);
-      setState(() {
-        products = data.map((json) => Product.fromJson(json)).toList();
-        isLoading = false;
-      });
-    } else {
-      throw Exception('Failed to load products');
+    // ✅ 1. แก้ไข URL สำหรับดึงข้อมูลสินค้า
+    final url = Uri.parse('http://10.0.2.2:8000/api/products');
+    try {
+      final response = await http.get(url, headers: {'Accept': 'application/json'});
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        if (!mounted) return;
+        setState(() {
+          products = data.map((json) => Product.fromJson(json)).toList();
+          isLoading = false;
+        });
+      } else {
+        throw Exception('Failed to load products');
+      }
+    } catch(e) {
+       print('Error fetching products: $e');
+       if (!mounted) return;
+       setState(() {
+         isLoading = false;
+       });
     }
   }
 
   Future<void> _checkOrderStatus() async {
     if (_cusId == null) return;
-    final url = Uri.parse('http://10.0.2.2/api/fetch_cushistory.php?cus_id=$_cusId');
+    // ✅ 2. แก้ไข URL สำหรับตรวจสอบสถานะ (ใช้ history endpoint)
+    final url = Uri.parse('http://10.0.2.2:8000/api/customers/$_cusId/history');
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
@@ -62,6 +73,7 @@ class _CustomerScreenState extends State<CustomerScreen> {
         final int completedCount = data.where((order) => order['receive_date'] != null).length;
         
         if (completedCount > _completedOrdersCount) {
+          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('✅ คำสั่งซื้อเสร็จสิ้น กรุณามารับเครื่องดื่มที่เคาน์เตอร์'),
@@ -69,6 +81,7 @@ class _CustomerScreenState extends State<CustomerScreen> {
             ),
           );
         }
+        if (!mounted) return;
         setState(() {
           _completedOrdersCount = completedCount;
         });
@@ -79,12 +92,14 @@ class _CustomerScreenState extends State<CustomerScreen> {
   }
 
   Future<void> _fetchCustomerData(int cusId) async {
-    final url = Uri.parse('http://10.0.2.2/api/customer.php?cus_id=$cusId');
+    // ✅ 3. แก้ไข URL สำหรับดึงข้อมูลลูกค้า
+    final url = Uri.parse('http://10.0.2.2:8000/api/customers/$cusId');
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['status'] == 'success') {
+          if (!mounted) return;
           setState(() {
             _cusName = data['fullname'];
             _cusEmail = data['email'];
@@ -104,7 +119,6 @@ class _CustomerScreenState extends State<CustomerScreen> {
       fetchProducts();
       if (_cusId != null) {
         _fetchCustomerData(_cusId!);
-        // ตั้งเวลาเช็คสถานะคำสั่งซื้อทุก 5 วินาที
         _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
           _checkOrderStatus();
         });
@@ -114,12 +128,14 @@ class _CustomerScreenState extends State<CustomerScreen> {
 
   @override
   void dispose() {
-    _timer?.cancel(); // ยกเลิก Timer เมื่อออกจากหน้าจอ
+    _timer?.cancel();
     super.dispose();
   }
 
+  // ... (โค้ดส่วน build() ไม่ต้องแก้ไข) ...
   @override
   Widget build(BuildContext context) {
+    // ... โค้ดส่วนนี้เหมือนเดิมทุกประการ ...
     return Scaffold(
       backgroundColor: Colors.grey[50],
       drawer: Drawer(

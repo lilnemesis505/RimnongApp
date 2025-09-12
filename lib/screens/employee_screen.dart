@@ -1,23 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'package:rimnongapp/screens/auth/login_screen.dart';
+import 'dart:async';
 import 'package:rimnongapp/models/order.dart';
+import 'package:rimnongapp/screens/auth/login_screen.dart';
 import 'package:rimnongapp/screens/emhistory_screen.dart';
 
 class EmployeeScreen extends StatefulWidget {
-  const EmployeeScreen({super.key});
+  const EmployeeScreen({Key? key}) : super(key: key);
 
   @override
   State<EmployeeScreen> createState() => _EmployeeScreenState();
 }
 
 class _EmployeeScreenState extends State<EmployeeScreen> {
-  List<Order> orders = [];
+  List<Order> pendingOrders = [];
   bool isLoading = true;
   int? _emId;
   String _emName = 'พนักงาน';
   String _emEmail = 'employee@example.com';
+  Timer? _timer;
 
   @override
   void initState() {
@@ -25,19 +27,29 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _emId = ModalRoute.of(context)?.settings.arguments as int?;
       if (_emId != null) {
-        fetchEmployeeData(_emId!);
-        fetchOrders();
+        _fetchEmployeeData(_emId!);
+        fetchPendingOrders(); // Fetch initially
+        _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
+          fetchPendingOrders(); // Refresh every 5 seconds
+        });
       }
     });
   }
 
-  Future<void> fetchEmployeeData(int emId) async {
-    final url = Uri.parse('http://10.0.2.2/api/employee.php?em_id=$emId');
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchEmployeeData(int emId) async {
+    final url = Uri.parse('http://10.0.2.2:8000/api/employees/$emId');
     try {
-      final response = await http.get(url);
+      final response = await http.get(url, headers: {'Accept': 'application/json'});
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['status'] == 'success') {
+          if (!mounted) return;
           setState(() {
             _emName = data['em_name'];
             _emEmail = data['em_email'];
@@ -49,82 +61,64 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
     }
   }
 
-  Future<void> fetchOrders() async {
-    setState(() {
-      isLoading = true;
-    });
+  Future<void> fetchPendingOrders() async {
+    final url = Uri.parse('http://10.0.2.2:8000/api/orders/pending');
     try {
-      final response = await http.get(Uri.parse('http://10.0.2.2/api/fetch_orders.php'));
+      final response = await http.get(url, headers: {'Accept': 'application/json'});
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
+        if (!mounted) return;
         setState(() {
-          orders = data.map((json) => Order.fromJson(json)).toList();
+          pendingOrders = data.map((json) => Order.fromJson(json)).toList();
           isLoading = false;
         });
-      } else {
-        throw Exception('Failed to load orders');
       }
     } catch (e) {
-      print('Error fetching orders: $e');
+      print('Error fetching pending orders: $e');
+      if (!mounted) return;
       setState(() {
         isLoading = false;
       });
     }
   }
 
-  // ฟังก์ชันใหม่สำหรับ "รับคำสั่งซื้อ" (อัปเดตแค่ em_id)
-  Future<void> acceptOrder(int orderId) async {
-    final url = Uri.parse('http://10.0.2.2/api/complete_order.php');
+  Future<void> _updateOrderStatus(int orderId, String action) async {
+    final url = Uri.parse('http://10.0.2.2:8000/api/orders/update-status');
     try {
       final response = await http.post(
         url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'order_id': orderId, 'em_id': _emId, 'action': 'accept'}),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: json.encode({
+          'order_id': orderId,
+          'action': action,
+          'em_id': _emId,
+        }),
       );
-      final data = json.decode(response.body);
-      if (response.statusCode == 200 && data['status'] == 'success') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('รับคำสั่งซื้อเรียบร้อย')),
-        );
-        fetchOrders(); // โหลดรายการใหม่เพื่ออัปเดต UI
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'เกิดข้อผิดพลาดในการรับคำสั่งซื้อ'), backgroundColor: Colors.red),
-        );
-      }
-    } catch (e) {
-      print('Error accepting order: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
 
-  // ฟังก์ชันสำหรับ "ทำรายการเสร็จสิ้น" (อัปเดต receive_date)
-  Future<void> completeOrder(int orderId) async {
-    final url = Uri.parse('http://10.0.2.2/api/complete_order.php');
-    try {
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'order_id': orderId, 'em_id': _emId, 'action': 'complete'}),
-      );
-      final data = json.decode(response.body);
-      if (response.statusCode == 200 && data['status'] == 'success') {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ทำรายการเสร็จสิ้น!')),
-        );
-        fetchOrders(); // โหลดรายการใหม่เพื่ออัปเดต UI
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['status'] == 'success') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(action == 'accept' ? 'รับออเดอร์สำเร็จ' : 'ทำรายการเสร็จสิ้น'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          fetchPendingOrders(); // Refresh the list
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'เกิดข้อผิดพลาดในการทำรายการ'), backgroundColor: Colors.red),
-        );
+         ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('เกิดข้อผิดพลาด'),
+              backgroundColor: Colors.red,
+            ),
+          );
       }
     } catch (e) {
-      print('Error completing order: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red),
-      );
+      print('Error updating order status: $e');
     }
   }
 
@@ -133,123 +127,220 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('รายละเอียดคำสั่งซื้อ #${order.orderId}'),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            'รายละเอียดคำสั่งซื้อ #${order.orderId}',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Sarabun'),
+          ),
           content: SingleChildScrollView(
             child: ListBody(
               children: <Widget>[
-                Text('ลูกค้า: ${order.customerName}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text('วันที่สั่ง: ${order.orderDate}'),
-                Text('ราคารวม: ฿${order.totalPrice.toStringAsFixed(2)}'),
-                if (order.promoCode != null) Text('โค้ดโปรโมชัน: ${order.promoCode}'),
-                if (order.remarks != null && order.remarks!.isNotEmpty) Text('หมายเหตุ: ${order.remarks}'),
-                const Divider(),
-                const Text('รายการสินค้า:', style: TextStyle(fontWeight: FontWeight.bold)),
-                ...order.orderDetails.map((detail) => Text('- ${detail.proName} x${detail.amount} (฿${detail.payTotal.toStringAsFixed(2)})')),
-                const Divider(),
+                _buildDetailRow('ลูกค้า:', order.customerName ?? 'N/A'),
+                _buildDetailRow('วันที่สั่ง:', order.orderDate),
+                if (order.remarks != null && order.remarks!.isNotEmpty) _buildDetailRow('หมายเหตุ:', order.remarks!),
+                const Divider(height: 20, color: Colors.brown),
+                const Text(
+                  'รายการสินค้า:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Sarabun'),
+                ),
+                ...order.orderDetails.map((detail) => Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Text(
+                    '- ${detail.proName} x${detail.amount} (฿${detail.payTotal.toStringAsFixed(2)})',
+                    style: const TextStyle(fontFamily: 'Sarabun'),
+                  ),
+                )),
               ],
             ),
           ),
           actions: <Widget>[
             TextButton(
-              child: const Text('ปิด'),
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              style: TextButton.styleFrom(foregroundColor: Colors.brown),
+              child: const Text('ปิด', style: TextStyle(fontFamily: 'Sarabun')),
+              onPressed: () => Navigator.of(context).pop(),
             ),
           ],
         );
       },
     );
   }
-  
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('คำสั่งซื้อ'),
-        backgroundColor: Colors.teal,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: fetchOrders,
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(fontSize: 16, color: Colors.grey[700], fontFamily: 'Sarabun'),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Sarabun'),
+            ),
           ),
         ],
       ),
-      drawer: Drawer(
-        child: ListView(
-          padding: EdgeInsets.zero,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // แยกรายการที่ยังไม่รับ กับรายการที่เรารับแล้ว
+    final newOrders = pendingOrders.where((o) => o.emId == null).toList();
+    final myOrders = pendingOrders.where((o) => o.emId == _emId).toList();
+
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      drawer: _buildDrawer(),
+      appBar: AppBar(
+        title: const Text(
+          'รายการออเดอร์',
+          style: TextStyle(color: Colors.white, fontFamily: 'Sarabun'),
+        ),
+        backgroundColor: Colors.teal[700],
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator(color: Colors.teal))
+          : RefreshIndicator(
+              onRefresh: fetchPendingOrders,
+              child: pendingOrders.isEmpty
+                  ? const Center(child: Text('ไม่มีรายการที่กำลังรอ...'))
+                  : ListView(
+                      padding: const EdgeInsets.all(8),
+                      children: [
+                        _buildOrderSection('ออเดอร์ใหม่', newOrders, 'accept'),
+                        _buildOrderSection('ออเดอร์ของฉัน', myOrders, 'complete'),
+                      ],
+                    ),
+            ),
+    );
+  }
+  
+  Widget _buildOrderSection(String title, List<Order> orders, String action) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+          child: Text(
+            '$title (${orders.length})',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.teal[800]),
+          ),
+        ),
+        if (orders.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: Text('ไม่มีรายการ'),
+          )
+        else
+          ...orders.map((order) => _buildOrderCard(order, action)).toList(),
+      ],
+    );
+  }
+
+  Widget _buildOrderCard(Order order, String action) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            UserAccountsDrawerHeader(
-              accountName: Text('พนักงาน: $_emName'),
-              accountEmail: Text(_emEmail),
-              currentAccountPicture: const CircleAvatar(
-                backgroundColor: Colors.white,
-                child: Icon(Icons.person, size: 40),
-              ),
-              decoration: const BoxDecoration(color: Colors.teal),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'คำสั่งซื้อ #${order.orderId}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                Text(
+                  '฿${order.totalPrice.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal),
+                ),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.history),
-              title: const Text('ประวัติการทำรายการ'),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => EmHistoryScreen(emId: _emId)),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.logout),
-              title: const Text('ออกจากระบบ'),
-              onTap: () {
-                Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  (route) => false,
-                );
-              },
+            Text('ลูกค้า: ${order.customerName ?? "N/A"}'),
+            const Divider(height: 20),
+            ...order.orderDetails.map((detail) => Text('- ${detail.proName} x${detail.amount}')),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  icon: const Icon(Icons.info_outline),
+                  label: const Text('ดูรายละเอียด'),
+                  onPressed: () => _showOrderDetails(order),
+                  style: TextButton.styleFrom(foregroundColor: Colors.grey[600]),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton.icon(
+                  icon: Icon(action == 'accept' ? Icons.check : Icons.done_all),
+                  label: Text(action == 'accept' ? 'รับออเดอร์' : 'ทำเสร็จแล้ว'),
+                  onPressed: () => _updateOrderStatus(order.orderId, action),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: action == 'accept' ? Colors.amber[700] : Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : orders.isEmpty
-              ? const Center(child: Text('ไม่มีรายการคำสั่งซื้อที่รอดำเนินการ'))
-              : ListView.builder(
-                  itemCount: orders.length,
-                  itemBuilder: (context, index) {
-                    final order = orders[index];
-                    Widget trailingWidget;
-                    if (order.emId == null) {
-                      trailingWidget = ElevatedButton(
-                        onPressed: () => acceptOrder(order.orderId),
-                        child: const Text('รับคำสั่งซื้อ'),
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
-                      );
-                    } else if (order.receiveDate == null) {
-                      trailingWidget = ElevatedButton(
-                        onPressed: () => completeOrder(order.orderId),
-                        child: const Text('ทำรายการเสร็จสิ้น'),
-                        style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-                      );
-                    } else {
-                      trailingWidget = const Text('เสร็จสิ้นแล้ว', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold));
-                    }
-                    return Card(
-                      margin: const EdgeInsets.all(8),
-                      child: ListTile(
-                        title: Text('คำสั่งซื้อ #${order.orderId}'),
-                        subtitle: Text('ลูกค้า: ${order.customerName} | รวมทั้งหมด: ฿${order.totalPrice.toStringAsFixed(2)}'),
-                        leading: IconButton(
-                          icon: const Icon(Icons.arrow_right),
-                          onPressed: () => _showOrderDetails(order),
-                        ),
-                        trailing: trailingWidget,
-                      ),
-                    );
-                  },
-                ),
+    );
+  }
+
+  Drawer _buildDrawer() {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          UserAccountsDrawerHeader(
+            accountName: Text(_emName, style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Sarabun')),
+            accountEmail: Text(_emEmail, style: const TextStyle(fontFamily: 'Sarabun')),
+            currentAccountPicture: CircleAvatar(
+              backgroundColor: Colors.teal[100],
+              child: Icon(Icons.person, size: 40, color: Colors.teal[800]),
+            ),
+            decoration: BoxDecoration(color: Colors.teal[400]),
+          ),
+          ListTile(
+            leading: Icon(Icons.list_alt, color: Colors.teal[700]),
+            title: const Text('รายการออเดอร์', style: TextStyle(fontFamily: 'Sarabun')),
+            onTap: () => Navigator.pop(context),
+          ),
+          ListTile(
+            leading: Icon(Icons.history, color: Colors.teal[700]),
+            title: const Text('ประวัติการทำรายการ', style: TextStyle(fontFamily: 'Sarabun')),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => EmHistoryScreen(emId: _emId)),
+              );
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: Icon(Icons.logout, color: Colors.teal[700]),
+            title: const Text('ออกจากระบบ', style: TextStyle(fontFamily: 'Sarabun')),
+            onTap: () {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
+                (route) => false,
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }

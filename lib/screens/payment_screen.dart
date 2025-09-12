@@ -85,12 +85,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
       _isUploading = true;
     });
 
-    final url = Uri.parse('http://10.0.2.2/api/order.php');
+final url = Uri.parse('http://10.0.2.2:8000/api/orders');
+    // -------------------------
 
     try {
       var request = http.MultipartRequest('POST', url);
+      
+      // เพิ่ม Headers ที่จำเป็น
+      request.headers['Accept'] = 'application/json';
 
-      // เพิ่มข้อมูลคำสั่งซื้อ
+      // เพิ่มข้อมูลคำสั่งซื้อ (ส่วนนี้ถูกต้องแล้ว)
       request.fields['cus_id'] = widget.orderData['cus_id'].toString();
       request.fields['price_total'] = widget.orderData['price_total'].toString();
       request.fields['remarks'] = widget.orderData['remarks'].toString();
@@ -99,45 +103,59 @@ class _PaymentScreenState extends State<PaymentScreen> {
         request.fields['promo_id'] = widget.orderData['promo_id'].toString();
       }
 
-      // เพิ่มรูปภาพสลิป
+      // เพิ่มรูปภาพสลิป (ส่วนนี้ถูกต้องแล้ว)
       request.files.add(
-        http.MultipartFile.fromBytes(
+        await http.MultipartFile.fromPath(
           'slip_image',
-          _slipImage!.readAsBytesSync(),
+          _slipImage!.path,
           filename: path.basename(_slipImage!.path),
         ),
       );
 
-      final response = await request.send();
-      final responseBody = await response.stream.bytesToString();
-      final data = json.decode(responseBody);
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+      final data = json.decode(response.body);
 
-      if (response.statusCode == 200 && data['status'] == 'success') {
+      if (!mounted) return;
+
+      // Laravel จะตอบกลับ status 201 (Created) เมื่อสำเร็จ
+      if (response.statusCode == 201 && data['status'] == 'success') {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('สั่งซื้อสำเร็จ!')),
+          const SnackBar(
+            content: Text('สั่งซื้อสำเร็จ!'),
+            backgroundColor: Colors.green,
+          ),
         );
-       Navigator.pushAndRemoveUntil(
-            context,
-            MaterialPageRoute(builder: (_) => const CustomerScreen()),
-            (Route<dynamic> route) => false,
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const CustomerScreen()), // อาจจะต้องส่ง cusId กลับไปด้วย
+          (Route<dynamic> route) => false,
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data['message'] ?? 'เกิดข้อผิดพลาดในการสั่งซื้อ')),
+          SnackBar(
+            content: Text(data['message'] ?? 'เกิดข้อผิดพลาดในการสั่งซื้อ'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } catch (e) {
       print('Error submitting order with slip: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
+        SnackBar(
+          content: Text('การเชื่อมต่อผิดพลาด: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
-      setState(() {
-        _isUploading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+        });
+      }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     double totalPrice = widget.orderData['price_total'];

@@ -22,24 +22,27 @@ class _EmHistoryScreenState extends State<EmHistoryScreen> {
     fetchHistoryOrders();
   }
 
-  // ดึงประวัติคำสั่งซื้อที่เสร็จสิ้นแล้วจาก API
   Future<void> fetchHistoryOrders() async {
+    if (!mounted) return;
     setState(() {
       isLoading = true;
     });
 
     if (widget.emId == null) {
+      if (!mounted) return;
       setState(() {
         isLoading = false;
       });
       return;
     }
 
-    final url = Uri.parse('http://10.0.2.2/api/fetch_history_orders.php?em_id=${widget.emId}');
+    // ✅ 1. แก้ไข URL ให้ชี้ไปที่ API ใหม่ของ Laravel
+    final url = Uri.parse('http://10.0.2.2:8000/api/employees/${widget.emId}/history');
     try {
-      final response = await http.get(url);
+      final response = await http.get(url, headers: {'Accept': 'application/json'});
       if (response.statusCode == 200) {
         final List<dynamic> data = json.decode(response.body);
+        if (!mounted) return;
         setState(() {
           historyOrders = data.map((json) => Order.fromJson(json)).toList();
         });
@@ -49,38 +52,54 @@ class _EmHistoryScreenState extends State<EmHistoryScreen> {
     } catch (e) {
       print('Error fetching history orders: $e');
     } finally {
+      if (!mounted) return;
       setState(() {
         isLoading = false;
       });
     }
   }
 
-  // ฟังก์ชันสำหรับแสดงรายละเอียดคำสั่งซื้อใน Dialog
   void _showOrderDetails(Order order) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('รายละเอียดคำสั่งซื้อ #${order.orderId}'),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            'รายละเอียดคำสั่งซื้อ #${order.orderId}',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Sarabun'),
+          ),
           content: SingleChildScrollView(
             child: ListBody(
               children: <Widget>[
-                Text('ลูกค้า: ${order.customerName}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text('วันที่สั่ง: ${order.orderDate}'),
-                Text('ราคารวม: ฿${order.totalPrice.toStringAsFixed(2)}'),
-                if (order.promoCode != null) Text('โค้ดโปรโมชัน: ${order.promoCode}'),
-                if (order.remarks != null && order.remarks!.isNotEmpty) Text('หมายเหตุ: ${order.remarks}'),
-                const Divider(),
-                const Text('รายการสินค้า:', style: TextStyle(fontWeight: FontWeight.bold)),
-                // เพิ่มส่วนแสดงรายการสินค้า
-                ...order.orderDetails.map((detail) => Text('- ${detail.proName} x${detail.amount} (฿${detail.payTotal.toStringAsFixed(2)})')),
-                const Divider(),
+                _buildDetailRow('ลูกค้า:', order.customerName ?? 'N/A'),
+                _buildDetailRow('วันที่สั่ง:', order.orderDate),
+                _buildDetailRow('ราคารวม:', '฿${order.totalPrice.toStringAsFixed(2)}'),
+                if (order.promoCode != null) _buildDetailRow('โค้ดโปรโมชัน:', order.promoCode!),
+                if (order.remarks != null && order.remarks!.isNotEmpty) _buildDetailRow('หมายเหตุ:', order.remarks!),
+                const Divider(height: 20, color: Colors.brown),
+                const Text(
+                  'รายการสินค้า:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Sarabun'),
+                ),
+                ...order.orderDetails.map((detail) => Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Text(
+                    '- ${detail.proName} x${detail.amount} (฿${detail.payTotal.toStringAsFixed(2)})',
+                    style: const TextStyle(fontFamily: 'Sarabun'),
+                  ),
+                )),
+                const Divider(height: 20, color: Colors.brown),
+                 _buildDetailRow('วันที่รับออเดอร์:', order.receiveDate ?? 'N/A'),
               ],
             ),
           ),
           actions: <Widget>[
             TextButton(
-              child: const Text('ปิด'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.brown,
+              ),
+              child: const Text('ปิด', style: TextStyle(fontFamily: 'Sarabun')),
               onPressed: () {
                 Navigator.of(context).pop();
               },
@@ -91,31 +110,115 @@ class _EmHistoryScreenState extends State<EmHistoryScreen> {
     );
   }
 
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: TextStyle(fontSize: 16, color: Colors.grey[700], fontFamily: 'Sarabun'),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Sarabun'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // ✅ 2. ปรับปรุง UI ทั้งหมด
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text('ประวัติการทำรายการ'),
-        backgroundColor: Colors.teal,
+        title: const Text(
+          'ประวัติการทำรายการ',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Sarabun'),
+        ),
+        backgroundColor: Colors.teal[700], // สีสำหรับพนักงาน
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Colors.teal))
           : historyOrders.isEmpty
-              ? const Center(child: Text('ไม่มีประวัติการทำรายการ'))
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.history_toggle_off, size: 80, color: Colors.grey[400]),
+                      const SizedBox(height: 16),
+                      Text(
+                        'ไม่มีประวัติการทำรายการ',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.grey[600],
+                          fontFamily: 'Sarabun',
+                        ),
+                      ),
+                    ],
+                  ),
+                )
               : ListView.builder(
+                  padding: const EdgeInsets.all(8),
                   itemCount: historyOrders.length,
                   itemBuilder: (context, index) {
                     final order = historyOrders[index];
                     return Card(
-                      margin: const EdgeInsets.all(8),
+                      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 4,
                       child: ListTile(
-                        leading: IconButton(
-                          icon: const Icon(Icons.arrow_right),
-                          onPressed: () => _showOrderDetails(order),
+                        onTap: () => _showOrderDetails(order),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        leading: Icon(
+                          Icons.check_circle,
+                          color: Colors.green[700],
+                          size: 36,
                         ),
-                        title: Text('คำสั่งซื้อ #${order.orderId}'),
-                        subtitle: Text('ลูกค้า: ${order.customerName} | รวมทั้งหมด: ฿${order.totalPrice.toStringAsFixed(2)}'),
-                        trailing: const Text('เสร็จสิ้นแล้ว', style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                        title: Text(
+                          'คำสั่งซื้อ #${order.orderId}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            fontFamily: 'Sarabun',
+                          ),
+                        ),
+                        subtitle: Text(
+                          'ลูกค้า: ${order.customerName ?? "N/A"}',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontFamily: 'Sarabun',
+                          ),
+                        ),
+                        trailing: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                             Text(
+                              '฿${order.totalPrice.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'Sarabun',
+                                color: Colors.teal
+                              ),
+                            ),
+                            Text(
+                              '${order.orderDate.split(' ')[0]}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[500],
+                                fontFamily: 'Sarabun',
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     );
                   },

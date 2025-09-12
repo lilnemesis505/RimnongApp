@@ -7,6 +7,7 @@ import 'dart:convert';
 import 'package:path/path.dart' as path;
 import 'package:flutter/services.dart';
 import 'package:rimnongapp/screens/customer_screen.dart';
+import 'package:rimnongapp/config/api_config.dart';
 
 class PaymentScreen extends StatefulWidget {
   final Map<String, dynamic> orderData;
@@ -85,7 +86,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       _isUploading = true;
     });
 
-final url = Uri.parse('http://10.0.2.2:8000/api/orders');
+final url = Uri.parse('${ApiConfig.baseUrl}/api/orders');
     // -------------------------
 
     try {

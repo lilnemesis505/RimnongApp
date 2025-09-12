@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:rimnongapp/config/api_config.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
@@ -41,7 +42,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     try {
       // 3. แก้ไข URL ให้ถูกต้อง (เพิ่ม Port :8000) และเพิ่ม Header 'Accept'
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:8000/api/register'),
+        Uri.parse('${ApiConfig.baseUrl}/api/register'),
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',

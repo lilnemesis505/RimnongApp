@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:rimnongapp/screens/auth/register_screen.dart';
+import 'package:rimnongapp/config/api_config.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,7 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:8000/api/login'),
+        Uri.parse('${ApiConfig.baseUrl}/api/login'),
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },

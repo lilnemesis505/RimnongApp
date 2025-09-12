@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/product.dart';
 import 'payment_screen.dart';
+import 'package:rimnongapp/config/api_config.dart';
 
 class CartScreen extends StatefulWidget {
   final Map<Product, int> cart;
@@ -54,7 +55,7 @@ class _CartScreenState extends State<CartScreen> {
     }
 
     // ✅ 1. แก้ไข IP Address ให้ถูกต้องสำหรับ Android Emulator
-    final url = Uri.parse('http://10.0.2.2:8000/api/promotions/check');
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/promotions/check');
     try {
       final response = await http.post(
         url,

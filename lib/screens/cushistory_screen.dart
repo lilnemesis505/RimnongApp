@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:rimnongapp/models/order.dart';
+import 'package:rimnongapp/config/api_config.dart';
 
 class CusHistoryScreen extends StatefulWidget {
   final int? cusId;
@@ -35,7 +36,7 @@ class _CusHistoryScreenState extends State<CusHistoryScreen> {
       return;
     }
 
-    final url = Uri.parse('http://10.0.2.2:8000/api/customers/${widget.cusId}/history');
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/customers/${widget.cusId}/history');
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {

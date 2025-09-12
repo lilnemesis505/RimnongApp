@@ -8,6 +8,8 @@ import 'package:path/path.dart' as path;
 import 'package:flutter/services.dart';
 import 'package:rimnongapp/screens/customer_screen.dart';
 import 'package:rimnongapp/config/api_config.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:rimnongapp/service/permission_service.dart'; // เพิ่ม package นี้
 
 class PaymentScreen extends StatefulWidget {
   final Map<String, dynamic> orderData;
@@ -21,11 +23,62 @@ class PaymentScreen extends StatefulWidget {
 class _PaymentScreenState extends State<PaymentScreen> {
   File? _slipImage;
   bool _isUploading = false;
-  String _promptPayId = '0984873750'; // เลข PromptPay ของร้าน (ใส่ข้อมูลจริง)
-  String _bankName = 'ธนาคารกรุงไทย'; // ชื่อธนาคาร
+  String _promptPayId = '0984873750';
+  String _bankName = 'ธนาคารกรุงไทย';
   String _accountName = 'นายพงศกร มณีสาย';
 
-  // ฟังก์ชันคำนวณ CRC (Cyclic Redundancy Check) สำหรับ PromptPay
+  // ขอสิทธิ์จากผู้ใช้
+  Future<bool> _requestPermissions() async {
+    // ขอสิทธิ์เข้าถึง Storage (สำหรับ Android) และ Photos (สำหรับ iOS)
+    PermissionStatus status;
+    if (Platform.isAndroid) {
+      status = await Permission.storage.request();
+    } else {
+      status = await Permission.photos.request();
+    }
+    
+    if (status.isGranted) {
+      return true;
+    } else if (status.isPermanentlyDenied) {
+      // ผู้ใช้ปฏิเสธแบบถาวร
+      openAppSettings();
+      return false;
+    } else {
+      // ผู้ใช้ปฏิเสธชั่วคราว
+      return false;
+    }
+  }
+
+  // เลือกรูปภาพสลิปจากแกลเลอรี
+ Future<void> _pickSlipImage() async {
+  // เรียกใช้ฟังก์ชันขอสิทธิ์จากไฟล์ PermissionService.dart
+  final permissionGranted = await PermissionService.requestPhotosPermission();
+
+  if (!permissionGranted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('ไม่ได้รับอนุญาตให้เข้าถึงรูปภาพ โปรดลองอีกครั้ง'),
+      ),
+    );
+    return;
+  }
+
+  final picker = ImagePicker();
+  final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+  if (pickedFile != null) {
+    setState(() {
+      _slipImage = File(pickedFile.path);
+    });
+  }
+}
+  
+  // โค้ดส่วนที่เหลือเหมือนเดิม
+  // ... (ฟังก์ชัน CRC, get_promptPayPayload, และ _submitOrderWithSlip)
+  // ... (build method)
+
+  // คุณสามารถคัดลอกฟังก์ชัน crc16(), _promptPayPayload, _submitOrderWithSlip และ build method จากโค้ดเดิมได้เลย
+  
+  // (ฟังก์ชัน crc16 ที่มีอยู่แล้ว)
   int crc16(String data) {
     const int polynomial = 0x1021;
     int crc = 0xFFFF;
@@ -42,38 +95,24 @@ class _PaymentScreenState extends State<PaymentScreen> {
     return crc & 0xFFFF;
   }
 
-  // สร้างข้อมูล QR Code สำหรับ PromptPay
+  // (get _promptPayPayload)
   String get _promptPayPayload {
     double amount = widget.orderData['price_total'];
-
-    // โครงสร้างของ PromptPay QR Code ตามมาตรฐาน EMVCo
-    String payload = '000201'; // Payload Format Indicator
-    payload += '010212'; // Point of Initiation Method: 12 = Dynamic
-    payload += '2937'; // Merchant Account Information: PromptPay
-    payload += '0016A000000677010111'; // Application ID
-    payload += '01'; // ID Type
-    payload += '13' + _promptPayId.padLeft(13, '0'); // PromptPay ID (Phone number)
-    payload += '5802TH'; // Country Code: Thailand
-    payload += '54' + amount.toStringAsFixed(2).length.toString().padLeft(2, '0') + amount.toStringAsFixed(2); // Amount
-    payload += '5303764'; // Currency: THB
-
-    // ส่วน CRC จะถูกเพิ่มเป็นส่วนสุดท้าย
+    String payload = '000201';
+    payload += '010212';
+    payload += '2937';
+    payload += '0016A000000677010111';
+    payload += '01';
+    payload += '13' + _promptPayId.padLeft(13, '0');
+    payload += '5802TH';
+    payload += '54' + amount.toStringAsFixed(2).length.toString().padLeft(2, '0') + amount.toStringAsFixed(2);
+    payload += '5303764';
     String crcHex = crc16(payload).toRadixString(16).toUpperCase().padLeft(4, '0');
     payload += '6304' + crcHex;
-
     return payload;
   }
 
-  Future<void> _pickSlipImage() async {
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile != null) {
-      setState(() {
-        _slipImage = File(pickedFile.path);
-      });
-    }
-  }
-
+  // (ฟังก์ชัน _submitOrderWithSlip)
   Future<void> _submitOrderWithSlip() async {
     if (_slipImage == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -86,16 +125,12 @@ class _PaymentScreenState extends State<PaymentScreen> {
       _isUploading = true;
     });
 
-final url = Uri.parse('${ApiConfig.baseUrl}/api/orders');
-    // -------------------------
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/orders');
 
     try {
       var request = http.MultipartRequest('POST', url);
-      
-      // เพิ่ม Headers ที่จำเป็น
       request.headers['Accept'] = 'application/json';
 
-      // เพิ่มข้อมูลคำสั่งซื้อ (ส่วนนี้ถูกต้องแล้ว)
       request.fields['cus_id'] = widget.orderData['cus_id'].toString();
       request.fields['price_total'] = widget.orderData['price_total'].toString();
       request.fields['remarks'] = widget.orderData['remarks'].toString();
@@ -104,7 +139,6 @@ final url = Uri.parse('${ApiConfig.baseUrl}/api/orders');
         request.fields['promo_id'] = widget.orderData['promo_id'].toString();
       }
 
-      // เพิ่มรูปภาพสลิป (ส่วนนี้ถูกต้องแล้ว)
       request.files.add(
         await http.MultipartFile.fromPath(
           'slip_image',
@@ -119,7 +153,6 @@ final url = Uri.parse('${ApiConfig.baseUrl}/api/orders');
 
       if (!mounted) return;
 
-      // Laravel จะตอบกลับ status 201 (Created) เมื่อสำเร็จ
       if (response.statusCode == 201 && data['status'] == 'success') {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -129,7 +162,7 @@ final url = Uri.parse('${ApiConfig.baseUrl}/api/orders');
         );
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(builder: (_) => const CustomerScreen()), // อาจจะต้องส่ง cusId กลับไปด้วย
+          MaterialPageRoute(builder: (_) => const CustomerScreen()),
           (Route<dynamic> route) => false,
         );
       } else {
@@ -157,21 +190,23 @@ final url = Uri.parse('${ApiConfig.baseUrl}/api/orders');
       }
     }
   }
+
+  // (build method)
   @override
   Widget build(BuildContext context) {
     double totalPrice = widget.orderData['price_total'];
 
     return Scaffold(
-      backgroundColor: Colors.grey[50], // เพิ่มพื้นหลังสีอ่อน
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: const Text(
           'หน้าชำระเงิน',
           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Sarabun'),
         ),
         centerTitle: true,
-        backgroundColor: Colors.brown[700], // เปลี่ยนเป็นสีน้ำตาลเข้ม
-        elevation: 0, // เอาเงาออกเพื่อให้ดูมินิมอล
-        iconTheme: const IconThemeData(color: Colors.white), // เปลี่ยนสีไอคอนย้อนกลับ
+        backgroundColor: Colors.brown[700],
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -183,7 +218,7 @@ final url = Uri.parse('${ApiConfig.baseUrl}/api/orders');
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
-                color: Colors.brown, // สีตัวอักษรให้เข้ากับธีม
+                color: Colors.brown,
                 fontFamily: 'Sarabun',
               ),
               textAlign: TextAlign.center,
@@ -207,25 +242,25 @@ final url = Uri.parse('${ApiConfig.baseUrl}/api/orders');
                 child: QrImageView(
                   data: _promptPayPayload,
                   version: QrVersions.auto,
-                  size: 180.0, // ปรับขนาด QR Code ให้เหมาะสม
+                  size: 180.0,
                   backgroundColor: Colors.white,
                   eyeStyle: const QrEyeStyle(
                     eyeShape: QrEyeShape.square,
-                    color: Colors.brown, // สีตา QR ให้เข้ากับธีม
+                    color: Colors.brown,
                   ),
                   dataModuleStyle: const QrDataModuleStyle(
                     dataModuleShape: QrDataModuleShape.square,
-                    color: Colors.brown, // สีข้อมูล QR ให้เข้ากับธีม
+                    color: Colors.brown,
                   ),
                 ),
               ),
             ),
             const SizedBox(height: 24),
             Card(
-              elevation: 0, // เอาเงาออก
+              elevation: 0,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
-                side: BorderSide(color: Colors.brown[200]!, width: 1), // เพิ่มขอบบางๆ
+                side: BorderSide(color: Colors.brown[200]!, width: 1),
               ),
               color: Colors.white,
               child: Padding(
@@ -272,7 +307,7 @@ final url = Uri.parse('${ApiConfig.baseUrl}/api/orders');
             GestureDetector(
               onTap: _pickSlipImage,
               child: Container(
-                height: 120, // Reduced height for the placeholder
+                height: 120,
                 decoration: BoxDecoration(
                   color: _slipImage == null ? Colors.brown[50] : Colors.transparent,
                   border: Border.all(color: Colors.brown[200]!, width: 2),

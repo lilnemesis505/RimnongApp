@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:intl/intl.dart';
 import '../models/product.dart';
 import 'payment_screen.dart';
-import 'package:rimnongapp/config/api_config.dart';
 
 class CartScreen extends StatefulWidget {
   final Map<Product, int> cart;
@@ -16,81 +14,43 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
-  final TextEditingController _promoController = TextEditingController();
   final TextEditingController _remarksController = TextEditingController();
-  double _discount = 0.0;
-  String? _promoMessage;
-  int? _promoId; // เปลี่ยนเป็น int? เพื่อให้สอดคล้องกับ database
+  TimeOfDay? _selectedPickupTime;
 
   @override
   void dispose() {
-    _promoController.dispose();
     _remarksController.dispose();
     super.dispose();
   }
 
+  // --- Functions to calculate prices ---
+
   double get _subtotal {
-    if (widget.cart.isEmpty) {
-      return 0.0;
-    }
+    if (widget.cart.isEmpty) return 0.0;
     return widget.cart.entries
         .map((entry) => entry.key.price * entry.value)
-        .reduce((value, element) => value + element);
+        .reduce((a, b) => a + b);
+  }
+
+  double get _totalDiscount {
+    if (widget.cart.isEmpty) return 0.0;
+    return widget.cart.entries
+        .map((entry) {
+          final product = entry.key;
+          final quantity = entry.value;
+          if (product.specialPrice != null) {
+            return (product.price - product.specialPrice!) * quantity;
+          }
+          return 0.0;
+        })
+        .reduce((a, b) => a + b);
   }
 
   double get _totalPrice {
-    double total = _subtotal - _discount;
-    return total > 0 ? total : 0.0;
+    return _subtotal - _totalDiscount;
   }
 
-  Future<void> _checkPromoCode() async {
-    final promoCode = _promoController.text.trim();
-    if (promoCode.isEmpty) {
-      setState(() {
-        _discount = 0.0;
-        _promoMessage = null;
-        _promoId = null;
-      });
-      return;
-    }
-
-    // ✅ 1. แก้ไข IP Address ให้ถูกต้องสำหรับ Android Emulator
-    final url = Uri.parse('${ApiConfig.baseUrl}/api/promotions/check');
-    try {
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: json.encode({'promo_name': promoCode}),
-      );
-
-      if (!mounted) return;
-
-      final data = json.decode(response.body);
-      if (response.statusCode == 200 && data['status'] == 'success') {
-        setState(() {
-          _discount = double.parse(data['promo_discount'].toString());
-          _promoId = int.parse(data['promo_id'].toString());
-          _promoMessage =
-              'ใช้โค้ดส่วนลดสำเร็จ! ส่วนลด: ฿${_discount.toStringAsFixed(2)}';
-        });
-      } else {
-        setState(() {
-          _discount = 0.0;
-          _promoId = null;
-          _promoMessage = data['message'] ?? 'โค้ดโปรโมชันไม่ถูกต้อง';
-        });
-      }
-    } catch (e) {
-      setState(() {
-        _discount = 0.0;
-        _promoId = null;
-        _promoMessage = 'เกิดข้อผิดพลาดในการตรวจสอบโค้ด';
-      });
-    }
-  }
+  // --- Cart and Time Picker Logic ---
 
   void _updateQuantity(Product product, int quantity) {
     setState(() {
@@ -103,23 +63,126 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   void _removeProduct(Product product) {
-    setState(() {
-      widget.cart.remove(product);
-    });
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('ลบสินค้า', style: TextStyle(fontFamily: 'Sarabun')),
+          content: Text('คุณต้องการลบ "${product.proName}" ออกจากตะกร้าใช่หรือไม่?', style: const TextStyle(fontFamily: 'Sarabun')),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('ยกเลิก', style: TextStyle(fontFamily: 'Sarabun', color: Colors.grey)),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            TextButton(
+              child: const Text('ยืนยัน', style: TextStyle(fontFamily: 'Sarabun', color: Colors.red)),
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() => widget.cart.remove(product));
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
+  Future<void> _selectPickupTime(BuildContext context) async {
+    final now = TimeOfDay.now();
+    const closingTime = TimeOfDay(hour: 18, minute: 0);
+
+    if (now.hour > closingTime.hour || (now.hour == closingTime.hour && now.minute >= closingTime.minute)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ปิดรับออเดอร์ล่วงหน้าสำหรับวันนี้แล้ว (หลัง 18:00 น.)', style: TextStyle(fontFamily: 'Sarabun'))),
+      );
+      return;
+    }
+
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: now.hour + 1, minute: 0),
+      helpText: 'เลือกเวลารับสินค้า',
+      builder: (BuildContext context, Widget? child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Colors.brown,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+            dialogBackgroundColor: Colors.white,
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      final pickedDateTime = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, picked.hour, picked.minute);
+      final nowDateTime = DateTime.now();
+      final closingDateTime = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day, closingTime.hour, closingTime.minute);
+
+      if (pickedDateTime.isBefore(nowDateTime)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ไม่สามารถเลือกเวลาที่ผ่านมาแล้วได้', style: TextStyle(fontFamily: 'Sarabun'))),
+        );
+        return;
+      }
+
+      if (pickedDateTime.isAfter(closingDateTime)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('กรุณาเลือกเวลาก่อน 18:00 น.', style: TextStyle(fontFamily: 'Sarabun'))),
+        );
+        return;
+      }
+
+      setState(() {
+        _selectedPickupTime = picked;
+      });
+      _navigateToPayment();
+    }
+  }
+
+  void _navigateToPayment() {
+    if (widget.cart.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณาเพิ่มสินค้าลงในตะกร้าก่อน', style: TextStyle(fontFamily: 'Sarabun'))),
+      );
+      return;
+    }
+
+    final orderData = {
+      'cus_id': widget.cusId ?? 0,
+      'price_total': _totalPrice,
+      'remarks': _remarksController.text.trim(),
+      'order_items': widget.cart.entries.map((entry) {
+        final product = entry.key;
+        final quantity = entry.value;
+        return {
+          'pro_id': product.proId,
+          'amount': quantity,
+          'price_list': product.specialPrice ?? product.price, // Send special price if available
+          'pay_total': (product.specialPrice ?? product.price) * quantity,
+        };
+      }).toList(),
+      if (_selectedPickupTime != null)
+        'pickup_time': '${_selectedPickupTime!.hour.toString().padLeft(2, '0')}:${_selectedPickupTime!.minute.toString().padLeft(2, '0')}',
+    };
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => PaymentScreen(orderData: orderData)),
+    );
+  }
+
+  // --- UI Widgets ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
-        title: const Text(
-          'ตะกร้าสินค้า',
-          style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontFamily: 'Sarabun'),
-        ),
+        title: const Text('ตะกร้าสินค้า', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontFamily: 'Sarabun')),
         backgroundColor: Colors.brown[700],
         iconTheme: const IconThemeData(color: Colors.white),
       ),
@@ -128,155 +191,83 @@ class _CartScreenState extends State<CartScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.shopping_cart_outlined,
-                      size: 80, color: Colors.grey[400]),
+                  Icon(Icons.shopping_cart_outlined, size: 80, color: Colors.grey[400]),
                   const SizedBox(height: 16),
-                  Text(
-                    'ยังไม่มีสินค้าในตะกร้า',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.grey[600],
-                      fontFamily: 'Sarabun',
-                    ),
-                  ),
+                  Text('ยังไม่มีสินค้าในตะกร้า', style: TextStyle(fontSize: 18, color: Colors.grey[600], fontFamily: 'Sarabun')),
                 ],
               ),
             )
           : Column(
               children: [
-                Expanded(
-                  child: ListView.builder(
-                    padding: const EdgeInsets.only(top: 8),
-                    itemCount: widget.cart.length,
-                    itemBuilder: (context, index) {
-                      final product = widget.cart.keys.elementAt(index);
-                      final quantity = widget.cart[product]!;
-                      return Card(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        elevation: 2,
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  product.proName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                    fontFamily: 'Sarabun',
-                                  ),
-                                ),
-                              ),
-                              Row(
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.remove_circle,
-                                        color: Colors.brown),
-                                    onPressed: () =>
-                                        _updateQuantity(product, quantity - 1),
-                                  ),
-                                  Text(
-                                    quantity.toString(),
-                                    style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        fontFamily: 'Sarabun'),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.add_circle,
-                                        color: Colors.brown),
-                                    onPressed: () =>
-                                        _updateQuantity(product, quantity + 1),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                '฿${(product.price * quantity).toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                  color: Colors.brown,
-                                  fontFamily: 'Sarabun',
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.delete_outline,
-                                    color: Colors.red),
-                                onPressed: () => _removeProduct(product),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius:
-                        const BorderRadius.vertical(top: Radius.circular(20)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, -5),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildPromoField(),
-                      if (_promoMessage != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8.0),
-                          child: Text(
-                            _promoMessage!,
-                            style: TextStyle(
-                              color: _discount > 0 ? Colors.green : Colors.red,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'Sarabun',
-                            ),
-                          ),
-                        ),
-                      const SizedBox(height: 12),
-                      _buildRemarksField(),
-                      const SizedBox(height: 24),
-                      _buildPriceSummary(),
-                      const SizedBox(height: 24),
-                      _buildCheckoutButton(context),
-                    ],
-                  ),
-                ),
+                Expanded(child: _buildCartList()),
+                _buildSummaryAndActions(),
               ],
             ),
     );
   }
 
-  Widget _buildPromoField() {
-    return TextField(
-      controller: _promoController,
-      style: const TextStyle(fontFamily: 'Sarabun'),
-      decoration: InputDecoration(
-        labelText: 'โค้ดโปรโมชัน',
-        labelStyle: TextStyle(color: Colors.brown[400], fontFamily: 'Sarabun'),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        filled: true,
-        fillColor: Colors.brown[50],
-        suffixIcon: IconButton(
-          icon: const Icon(Icons.check_circle, color: Colors.brown),
-          onPressed: _checkPromoCode,
-        ),
+  Widget _buildCartList() {
+    return ListView.builder(
+      padding: const EdgeInsets.only(top: 8, left: 8, right: 8),
+      itemCount: widget.cart.length,
+      itemBuilder: (context, index) {
+        final product = widget.cart.keys.elementAt(index);
+        final quantity = widget.cart[product]!;
+        final hasPromo = product.specialPrice != null;
+        final priceToShow = hasPromo ? product.specialPrice! : product.price;
+
+        return Card(
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 2,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            child: Row(children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(product.proName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'Sarabun')),
+                    if (hasPromo)
+                      Text(
+                        'ราคาปกติ: ฿${product.price.toStringAsFixed(2)}',
+                        style: const TextStyle(decoration: TextDecoration.lineThrough, color: Colors.grey, fontSize: 12, fontFamily: 'Sarabun'),
+                      ),
+                  ],
+                ),
+              ),
+              Row(children: [
+                IconButton(icon: const Icon(Icons.remove_circle, color: Colors.brown), onPressed: () => _updateQuantity(product, quantity - 1)),
+                Text(quantity.toString(), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Sarabun')),
+                IconButton(icon: const Icon(Icons.add_circle, color: Colors.brown), onPressed: () => _updateQuantity(product, quantity + 1)),
+              ]),
+              const SizedBox(width: 8),
+              Text('฿${(priceToShow * quantity).toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.brown, fontFamily: 'Sarabun')),
+              IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red), onPressed: () => _removeProduct(product)),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSummaryAndActions() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildRemarksField(),
+          const SizedBox(height: 24),
+          _buildPriceSummary(),
+          const SizedBox(height: 24),
+          _buildCheckoutButtons(context),
+        ],
       ),
     );
   }
@@ -288,10 +279,7 @@ class _CartScreenState extends State<CartScreen> {
       decoration: InputDecoration(
         labelText: 'หมายเหตุถึงร้านค้า',
         labelStyle: TextStyle(color: Colors.brown[400], fontFamily: 'Sarabun'),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
         filled: true,
         fillColor: Colors.brown[50],
       ),
@@ -305,109 +293,64 @@ class _CartScreenState extends State<CartScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text('ราคารวม:',
-                style: TextStyle(fontSize: 16, fontFamily: 'Sarabun')),
-            Text('฿${_subtotal.toStringAsFixed(2)}',
-                style: const TextStyle(fontSize: 16, fontFamily: 'Sarabun')),
+            const Text('ราคารวม:', style: TextStyle(fontSize: 16, color: Colors.grey, fontFamily: 'Sarabun')),
+            Text('฿${_subtotal.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, color: Colors.grey, fontFamily: 'Sarabun')),
           ],
         ),
-        if (_discount > 0)
-          Padding(
-            padding: const EdgeInsets.only(top: 4.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('ส่วนลด:',
-                    style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.green,
-                        fontFamily: 'Sarabun')),
-                Text('-฿${_discount.toStringAsFixed(2)}',
-                    style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.green,
-                        fontFamily: 'Sarabun')),
-              ],
-            ),
-          ),
-        const Divider(color: Colors.grey, height: 24),
+        const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            const Text(
-              'ยอดชำระ:',
-              style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  fontFamily: 'Sarabun'),
-            ),
-            Text(
-              '฿${_totalPrice.toStringAsFixed(2)}',
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Colors.brown,
-                fontFamily: 'Sarabun',
-              ),
-            ),
+            const Text('ส่วนลดโปรโมชั่น:', style: TextStyle(fontSize: 16, color: Colors.green, fontFamily: 'Sarabun')),
+            Text('- ฿${_totalDiscount.toStringAsFixed(2)}', style: const TextStyle(fontSize: 16, color: Colors.green, fontFamily: 'Sarabun')),
+          ],
+        ),
+        const Divider(height: 24, thickness: 1),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('ยอดชำระสุทธิ:', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'Sarabun')),
+            Text('฿${_totalPrice.toStringAsFixed(2)}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.brown, fontFamily: 'Sarabun')),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildCheckoutButton(BuildContext context) {
-    return ElevatedButton.icon(
-      onPressed: () {
-        if (widget.cart.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('กรุณาเพิ่มสินค้าลงในตะกร้าก่อน',
-                    style: TextStyle(fontFamily: 'Sarabun'))),
-          );
-          return;
-        }
-
-        // ✅ 2. ปรับปรุงการส่งข้อมูล promo_id
-        final orderData = {
-          'cus_id': widget.cusId ?? 0,
-          'price_total': _totalPrice,
-          'remarks': _remarksController.text.trim(),
-          'order_items': widget.cart.entries.map((entry) {
-            final product = entry.key;
-            final quantity = entry.value;
-            return {
-              'pro_id': product.proId,
-              'amount': quantity,
-              'price_list': product.price,
-              'pay_total': product.price * quantity,
-            };
-          }).toList(),
-          if (_promoId != null) 'promo_id': _promoId,
-        };
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PaymentScreen(orderData: orderData),
+  Widget _buildCheckoutButtons(BuildContext context) {
+    return Column(
+      children: [
+        ElevatedButton.icon(
+          onPressed: () {
+            setState(() {
+              _selectedPickupTime = null;
+            });
+            _navigateToPayment();
+          },
+          icon: const Icon(Icons.payment, color: Colors.white),
+          label: const Text('ยืนยันและชำระเงิน', style: TextStyle(fontSize: 18, fontFamily: 'Sarabun', fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.brown[600],
+            foregroundColor: Colors.white,
+            minimumSize: const Size(double.infinity, 56),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            elevation: 2,
           ),
-        );
-      },
-      icon: const Icon(Icons.payment, color: Colors.white),
-      label: const Text(
-        'ยืนยันและชำระเงิน',
-        style: TextStyle(
-            fontSize: 18, fontFamily: 'Sarabun', fontWeight: FontWeight.bold),
-      ),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.brown[600],
-        foregroundColor: Colors.white,
-        minimumSize: const Size(double.infinity, 56),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
         ),
-        elevation: 0,
-      ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: () => _selectPickupTime(context),
+          icon: const Icon(Icons.timer_outlined),
+          label: const Text('สั่งล่วงหน้า (Pre-order)', style: TextStyle(fontSize: 16, fontFamily: 'Sarabun')),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.brown[700],
+            side: BorderSide(color: Colors.brown[700]!),
+            minimumSize: const Size(double.infinity, 50),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+      ],
     );
   }
 }
+

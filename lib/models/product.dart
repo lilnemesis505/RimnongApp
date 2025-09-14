@@ -1,12 +1,13 @@
-// lib/models/product.dart
-
 class Product {
-  final int proId; // ✅ แก้ไขจาก String เป็น int
+  final int proId;
   final String proName;
   final double price;
   final int typeId;
   final String? imageUrl;
   final String? imageId;
+  // --- เพิ่ม field ใหม่ ---
+  final double? specialPrice;
+  final String? promoName;
 
   Product({
     required this.proId,
@@ -15,21 +16,24 @@ class Product {
     required this.typeId,
     this.imageUrl,
     this.imageId,
+    // --- เพิ่ม parameter ---
+    this.specialPrice,
+    this.promoName,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
     return Product(
-      // ✅ แปลงค่า ID ต่างๆ ให้เป็น int
       proId: int.parse(json['pro_id'].toString()),
       typeId: int.parse(json['type_id'].toString()),
-
       proName: json['pro_name'],
-
-      // ✅ แปลงค่า price ให้เป็น double
       price: double.parse(json['price'].toString()),
-
       imageUrl: json['image'],
       imageId: json['image_id'],
+      // --- รับค่า field ใหม่จาก JSON ---
+      specialPrice: json['special_price'] != null
+          ? double.parse(json['special_price'].toString())
+          : null,
+      promoName: json['promo_name'],
     );
   }
 }

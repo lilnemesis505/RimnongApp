@@ -8,8 +8,6 @@ import 'package:rimnongapp/screens/auth/login_screen.dart';
 import 'package:rimnongapp/screens/cart_screen.dart';
 import 'package:rimnongapp/screens/cushistory_screen.dart';
 
-// --- Main Screen Widget ---
-
 class CustomerScreen extends StatefulWidget {
   const CustomerScreen({super.key});
 
@@ -45,14 +43,8 @@ class _CustomerScreenState extends State<CustomerScreen> {
     fetchProducts();
     if (_cusId != null) {
       _fetchCustomerData(_cusId!);
-      // Set up a timer to check order status periodically
-      _orderStatusTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
-        _checkOrderStatus();
-      });
     }
   }
-
-  // --- Data Fetching & Logic Methods ---
 
   Future<void> fetchProducts() async {
     final url = Uri.parse('${ApiConfig.baseUrl}/api/products');
@@ -91,16 +83,6 @@ class _CustomerScreenState extends State<CustomerScreen> {
     }
   }
 
-  Future<void> _checkOrderStatus() async {
-    if (_cusId == null) return;
-    final url = Uri.parse('${ApiConfig.baseUrl}/api/customers/$_cusId/history');
-    try {
-      // ... Logic for checking order status can be added here if needed ...
-    } catch (e) {
-      print('Error checking order status: $e');
-    }
-  }
-
   void addToCart(Product product) {
     setState(() {
       cart.update(product, (value) => value + 1, ifAbsent: () => 1);
@@ -109,8 +91,6 @@ class _CustomerScreenState extends State<CustomerScreen> {
       SnackBar(content: Text('${product.proName} ถูกเพิ่มในตะกร้า'), duration: const Duration(seconds: 1)),
     );
   }
-
-  // --- Main Build Method ---
 
   @override
   Widget build(BuildContext context) {
@@ -134,8 +114,6 @@ class _CustomerScreenState extends State<CustomerScreen> {
     );
   }
 }
-
-// --- Reusable Widget for the Drawer ---
 
 class _CustomerDrawer extends StatelessWidget {
   const _CustomerDrawer({
@@ -198,8 +176,6 @@ class _CustomerDrawer extends StatelessWidget {
   }
 }
 
-// --- Reusable Widget for the Product Grid ---
-
 class _ProductGrid extends StatelessWidget {
   const _ProductGrid({required this.products, required this.onAddToCart});
 
@@ -228,8 +204,6 @@ class _ProductGrid extends StatelessWidget {
   }
 }
 
-// --- Reusable Widget for a Product Card ---
-
 class _ProductCard extends StatelessWidget {
   const _ProductCard({required this.product, required this.onAddToCart});
 
@@ -238,10 +212,12 @@ class _ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool hasPromo = product.specialPrice != null;
+
     return Card(
       elevation: 4,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      clipBehavior: Clip.antiAlias, // Ensures the image respects the border radius
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -250,7 +226,6 @@ class _ProductCard extends StatelessWidget {
               product.imageUrl ?? '',
               fit: BoxFit.cover,
               errorBuilder: (context, error, stackTrace) {
-                // ✅ แก้ไข: ใช้รูปภาพสำรองจาก assets ภายในโปรเจกต์
                 return Image.asset('assets/images/no-image.png', fit: BoxFit.cover);
               },
               loadingBuilder: (context, child, progress) {
@@ -271,10 +246,36 @@ class _ProductCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  '฿${product.price.toStringAsFixed(2)}',
-                  style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontFamily: 'Sarabun'),
-                ),
+                // --- ส่วนแสดงราคาที่แก้ไขใหม่ ---
+                if (hasPromo) ...[
+                  Text(
+                    '฿${product.price.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Colors.grey,
+                      decoration: TextDecoration.lineThrough,
+                      fontFamily: 'Sarabun',
+                    ),
+                  ),
+                  Text(
+                    '฿${product.specialPrice!.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      fontFamily: 'Sarabun',
+                    ),
+                  ),
+                ] else ...[
+                  Text(
+                    '฿${product.price.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Sarabun'
+                    ),
+                  ),
+                ],
+                // --- จบส่วนแสดงราคา ---
                 const SizedBox(height: 8),
                 ElevatedButton.icon(
                   onPressed: onAddToCart,

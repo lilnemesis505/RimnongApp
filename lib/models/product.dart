@@ -5,9 +5,11 @@ class Product {
   final int typeId;
   final String? imageUrl;
   final String? imageId;
-  // --- เพิ่ม field ใหม่ ---
   final double? specialPrice;
   final String? promoName;
+  // --- เพิ่ม Field ใหม่ ---
+  final int? promoId;
+  final double? promoDiscount;
 
   Product({
     required this.proId,
@@ -16,9 +18,11 @@ class Product {
     required this.typeId,
     this.imageUrl,
     this.imageId,
-    // --- เพิ่ม parameter ---
     this.specialPrice,
     this.promoName,
+    // --- เพิ่ม Parameter ---
+    this.promoId,
+    this.promoDiscount,
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -29,11 +33,17 @@ class Product {
       price: double.parse(json['price'].toString()),
       imageUrl: json['image'],
       imageId: json['image_id'],
-      // --- รับค่า field ใหม่จาก JSON ---
       specialPrice: json['special_price'] != null
           ? double.parse(json['special_price'].toString())
           : null,
       promoName: json['promo_name'],
+      // --- รับค่า Field ใหม่จาก JSON ---
+      promoId: json['promo_id'] != null 
+          ? int.parse(json['promo_id'].toString()) 
+          : null,
+      promoDiscount: json['promo_discount'] != null
+          ? double.parse(json['promo_discount'].toString())
+          : null,
     );
   }
 }

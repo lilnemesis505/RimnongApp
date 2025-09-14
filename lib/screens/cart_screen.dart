@@ -103,17 +103,20 @@ class _CartScreenState extends State<CartScreen> {
       initialTime: TimeOfDay(hour: now.hour + 1, minute: 0),
       helpText: 'เลือกเวลารับสินค้า',
       builder: (BuildContext context, Widget? child) {
-        return Theme(
-          data: ThemeData.light().copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: Colors.brown,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.black,
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: Theme(
+            data: ThemeData.light().copyWith(
+              colorScheme: const ColorScheme.light(
+                primary: Colors.brown,
+                onPrimary: Colors.white,
+                surface: Colors.white,
+                onSurface: Colors.black,
+              ),
+              dialogBackgroundColor: Colors.white,
             ),
-            dialogBackgroundColor: Colors.white,
+            child: child!,
           ),
-          child: child!,
         );
       },
     );
@@ -152,6 +155,15 @@ class _CartScreenState extends State<CartScreen> {
       return;
     }
 
+    // ✅ [FIX] Find the first product in the cart that has a promoId
+    int? promoId;
+    for (var product in widget.cart.keys) {
+      if (product.promoId != null) {
+        promoId = product.promoId;
+        break; // Use the first promoId found
+      }
+    }
+
     final orderData = {
       'cus_id': widget.cusId ?? 0,
       'price_total': _totalPrice,
@@ -162,10 +174,11 @@ class _CartScreenState extends State<CartScreen> {
         return {
           'pro_id': product.proId,
           'amount': quantity,
-          'price_list': product.specialPrice ?? product.price, // Send special price if available
+          'price_list': product.specialPrice ?? product.price,
           'pay_total': (product.specialPrice ?? product.price) * quantity,
         };
       }).toList(),
+      if (promoId != null) 'promo_id': promoId, // Send the found promoId
       if (_selectedPickupTime != null)
         'pickup_time': '${_selectedPickupTime!.hour.toString().padLeft(2, '0')}:${_selectedPickupTime!.minute.toString().padLeft(2, '0')}',
     };

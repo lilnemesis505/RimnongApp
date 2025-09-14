@@ -88,11 +88,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
       request.fields['price_total'] = widget.orderData['price_total'].toString();
       request.fields['remarks'] = widget.orderData['remarks'].toString();
       request.fields['order_items'] = json.encode(widget.orderData['order_items']);
-      if (widget.orderData['promo_id'] != null) {
-        request.fields['promo_id'] = widget.orderData['promo_id'].toString();
+
+      // ✅ [FIX] Changed to handle 'promo_ids' (List) from cart
+      if (widget.orderData['promo_ids'] != null) {
+        // Encode the list of promo_ids to a JSON string
+        request.fields['promo_ids'] = json.encode(widget.orderData['promo_ids']);
       }
       
-      // ✅ [FIX] Add 'pickup_time' to the request if it exists
       if (widget.orderData['pickup_time'] != null) {
         request.fields['pickup_time'] = widget.orderData['pickup_time'];
       }
@@ -116,7 +118,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
           const SnackBar(content: Text('สั่งซื้อสำเร็จ!'), backgroundColor: Colors.green),
         );
         
-        // ✅ [FIX] Navigate back to CustomerScreen with customer ID to allow re-ordering
         Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(

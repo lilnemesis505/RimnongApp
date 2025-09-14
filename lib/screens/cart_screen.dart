@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/product.dart';
 import 'payment_screen.dart';
+import 'dart:convert'; // Import for json.encode
 
 class CartScreen extends StatefulWidget {
   final Map<Product, int> cart;
@@ -50,42 +51,50 @@ class _CartScreenState extends State<CartScreen> {
     return _subtotal - _totalDiscount;
   }
 
-  // --- Cart and Time Picker Logic ---
+  // --- Navigation Logic ---
 
-  void _updateQuantity(Product product, int quantity) {
-    setState(() {
-      if (quantity > 0) {
-        widget.cart[product] = quantity;
-      } else {
-        _removeProduct(product);
-      }
-    });
-  }
+  void _navigateToPayment() {
+    if (widget.cart.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('กรุณาเพิ่มสินค้าลงในตะกร้าก่อน', style: TextStyle(fontFamily: 'Sarabun'))),
+      );
+      return;
+    }
 
-  void _removeProduct(Product product) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('ลบสินค้า', style: TextStyle(fontFamily: 'Sarabun')),
-          content: Text('คุณต้องการลบ "${product.proName}" ออกจากตะกร้าใช่หรือไม่?', style: const TextStyle(fontFamily: 'Sarabun')),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('ยกเลิก', style: TextStyle(fontFamily: 'Sarabun', color: Colors.grey)),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            TextButton(
-              child: const Text('ยืนยัน', style: TextStyle(fontFamily: 'Sarabun', color: Colors.red)),
-              onPressed: () {
-                Navigator.of(context).pop();
-                setState(() => widget.cart.remove(product));
-              },
-            ),
-          ],
-        );
-      },
+    // ✅ [FIX] Collect all unique promoIds from the cart
+    final uniquePromoIds = widget.cart.keys
+        .where((p) => p.promoId != null)
+        .map((p) => p.promoId!)
+        .toSet() // Use a Set to automatically handle duplicates
+        .toList();
+
+    final orderData = {
+      'cus_id': widget.cusId ?? 0,
+      'price_total': _totalPrice,
+      'remarks': _remarksController.text.trim(),
+      'order_items': widget.cart.entries.map((entry) {
+        final product = entry.key;
+        final quantity = entry.value;
+        return {
+          'pro_id': product.proId,
+          'amount': quantity,
+          'price_list': product.specialPrice ?? product.price,
+          'pay_total': (product.specialPrice ?? product.price) * quantity,
+        };
+      }).toList(),
+      // Send the array of promo_ids if it's not empty
+      if (uniquePromoIds.isNotEmpty) 'promo_ids': uniquePromoIds,
+      if (_selectedPickupTime != null)
+        'pickup_time': '${_selectedPickupTime!.hour.toString().padLeft(2, '0')}:${_selectedPickupTime!.minute.toString().padLeft(2, '0')}',
+    };
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => PaymentScreen(orderData: orderData)),
     );
   }
+
+  // ... other methods like _updateQuantity, build, etc. remain the same ...
 
   Future<void> _selectPickupTime(BuildContext context) async {
     final now = TimeOfDay.now();
@@ -147,49 +156,41 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
-  void _navigateToPayment() {
-    if (widget.cart.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรุณาเพิ่มสินค้าลงในตะกร้าก่อน', style: TextStyle(fontFamily: 'Sarabun'))),
-      );
-      return;
-    }
-
-    // ✅ [FIX] Find the first product in the cart that has a promoId
-    int? promoId;
-    for (var product in widget.cart.keys) {
-      if (product.promoId != null) {
-        promoId = product.promoId;
-        break; // Use the first promoId found
+    void _updateQuantity(Product product, int quantity) {
+    setState(() {
+      if (quantity > 0) {
+        widget.cart[product] = quantity;
+      } else {
+        _removeProduct(product);
       }
-    }
+    });
+  }
 
-    final orderData = {
-      'cus_id': widget.cusId ?? 0,
-      'price_total': _totalPrice,
-      'remarks': _remarksController.text.trim(),
-      'order_items': widget.cart.entries.map((entry) {
-        final product = entry.key;
-        final quantity = entry.value;
-        return {
-          'pro_id': product.proId,
-          'amount': quantity,
-          'price_list': product.specialPrice ?? product.price,
-          'pay_total': (product.specialPrice ?? product.price) * quantity,
-        };
-      }).toList(),
-      if (promoId != null) 'promo_id': promoId, // Send the found promoId
-      if (_selectedPickupTime != null)
-        'pickup_time': '${_selectedPickupTime!.hour.toString().padLeft(2, '0')}:${_selectedPickupTime!.minute.toString().padLeft(2, '0')}',
-    };
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => PaymentScreen(orderData: orderData)),
+  void _removeProduct(Product product) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('ลบสินค้า', style: TextStyle(fontFamily: 'Sarabun')),
+          content: Text('คุณต้องการลบ "${product.proName}" ออกจากตะกร้าใช่หรือไม่?', style: const TextStyle(fontFamily: 'Sarabun')),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('ยกเลิก', style: TextStyle(fontFamily: 'Sarabun', color: Colors.grey)),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            TextButton(
+              child: const Text('ยืนยัน', style: TextStyle(fontFamily: 'Sarabun', color: Colors.red)),
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() => widget.cart.remove(product));
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
-  // --- UI Widgets ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(

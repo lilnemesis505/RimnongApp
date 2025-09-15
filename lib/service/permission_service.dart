@@ -37,11 +37,6 @@ class PermissionService {
     }
   }
 
-  /// ขอสิทธิ์การเข้าถึงกล้องจากผู้ใช้
-  ///
-  /// returns:
-  ///   `true` หากได้รับอนุญาต
-  ///   `false` หากไม่ได้รับอนุญาต
   static Future<bool> requestCameraPermission() async {
     PermissionStatus status = await Permission.camera.request();
     if (status.isGranted) {

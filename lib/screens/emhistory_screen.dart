@@ -46,6 +46,10 @@ class _EmHistoryScreenState extends State<EmHistoryScreen> {
   }
 
   void _showOrderDetails(Order order) {
+    // ✅ [ADD] ตรรกะสำหรับเช็คว่าเป็น Pre-order หรือไม่
+    final orderDateTime = DateTime.tryParse(order.orderDate);
+    final bool isPreOrder = orderDateTime != null && orderDateTime.isAfter(DateTime.now());
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -56,7 +60,8 @@ class _EmHistoryScreenState extends State<EmHistoryScreen> {
             child: ListBody(
               children: <Widget>[
                 _buildDetailRow('ลูกค้า:', order.customerName),
-                _buildDetailRow('วันที่สั่ง:', order.orderDate),
+                // ✅ [RE-LOGIC] เปลี่ยนข้อความตามเงื่อนไข Pre-order
+                _buildDetailRow(isPreOrder ? 'วันที่จอง:' : 'วันที่สั่ง:', order.orderDate),
                 if (order.remarks != null && order.remarks!.isNotEmpty) _buildDetailRow('หมายเหตุ:', order.remarks!),
                 const Divider(height: 20, color: Colors.brown),
                 const Text('รายการสินค้า:', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Sarabun')),
@@ -66,6 +71,8 @@ class _EmHistoryScreenState extends State<EmHistoryScreen> {
                     )),
                  const Divider(height: 20, color: Colors.brown),
                 _buildDetailRow('วันที่ทำเสร็จ:', order.receiveDate ?? 'N/A'),
+                // ✅ [ADD] เพิ่มการแสดงผลวันที่ลูกค้ารับสินค้า
+                _buildDetailRow('วันที่ลูกค้ารับ:', order.grabDate ?? 'N/A'),
               ],
             ),
           ),
@@ -174,6 +181,10 @@ class _HistoryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ [ADD] ตรรกะสำหรับเช็คว่าเป็น Pre-order หรือไม่
+    final orderDateTime = DateTime.tryParse(order.orderDate);
+    final bool isPreOrder = orderDateTime != null && orderDateTime.isAfter(DateTime.now());
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -182,7 +193,23 @@ class _HistoryCard extends StatelessWidget {
         onTap: onTap,
         contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         leading: Icon(Icons.check_circle, color: Colors.green[700], size: 36),
-        title: Text('คำสั่งซื้อ #${order.orderId}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'Sarabun')),
+        // ✅ [RE-WIDGET] เปลี่ยนเป็น Row เพื่อเพิ่มป้าย "(จอง)"
+        title: Row(
+          children: [
+            Text('คำสั่งซื้อ #${order.orderId}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'Sarabun')),
+            const SizedBox(width: 8),
+            if (isPreOrder)
+              const Text(
+                '(จอง)',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  color: Colors.blue,
+                  fontFamily: 'Sarabun'
+                ),
+              ),
+          ],
+        ),
         subtitle: Text('ลูกค้า: ${order.customerName}', style: TextStyle(color: Colors.grey[600], fontFamily: 'Sarabun')),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,

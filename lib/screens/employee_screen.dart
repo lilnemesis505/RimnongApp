@@ -4,11 +4,11 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:rimnongapp/config/api_config.dart';
 import 'package:rimnongapp/models/order.dart';
+import 'package:rimnongapp/models/notification.dart'; // ✅ [ADD] Import a promotion model
 import 'package:rimnongapp/screens/auth/login_screen.dart';
 import 'package:rimnongapp/screens/emhistory_screen.dart';
 
-// --- Main Screen Widget ---
-
+// ... Main Screen Widget ...
 class EmployeeScreen extends StatefulWidget {
   const EmployeeScreen({Key? key}) : super(key: key);
 
@@ -18,6 +18,7 @@ class EmployeeScreen extends StatefulWidget {
 
 class _EmployeeScreenState extends State<EmployeeScreen> {
   List<Order> pendingOrders = [];
+  List<AppNotification> _notifications = [];
   bool isLoading = true;
   int? _emId;
   String _emName = 'พนักงาน';
@@ -31,14 +32,16 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
       _emId = ModalRoute.of(context)?.settings.arguments as int?;
       if (_emId != null) {
         _fetchEmployeeData(_emId!);
-        fetchPendingOrders(); // Fetch initially
+        fetchPendingOrders();
+        _fetchNotifications(); // ✅ [ADD] Fetch promotions on init
         _timer = Timer.periodic(const Duration(seconds: 10), (timer) {
-          fetchPendingOrders(); // Refresh every 10 seconds
+          fetchPendingOrders();
         });
       }
     });
   }
 
+  // ... dispose() ...
   @override
   void dispose() {
     _timer?.cancel();
@@ -47,6 +50,7 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
 
   // --- Data Fetching & Logic Methods ---
 
+  // ... _fetchEmployeeData() ...
   Future<void> _fetchEmployeeData(int emId) async {
     final url = Uri.parse('${ApiConfig.baseUrl}/api/employees/$emId');
     try {
@@ -65,6 +69,7 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
     }
   }
 
+  // ... fetchPendingOrders() ...
   Future<void> fetchPendingOrders() async {
     final url = Uri.parse('${ApiConfig.baseUrl}/api/orders/pending');
     try {
@@ -82,6 +87,22 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
     }
   }
 
+  // ✅ [ADD] New function to fetch active promotions
+   Future<void> _fetchNotifications() async {
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/notifications');
+    try {
+      final response = await http.get(url, headers: {'Accept': 'application/json'});
+      if (response.statusCode == 200 && mounted) {
+        final List<dynamic> data = json.decode(response.body);
+        setState(() {
+          _notifications = data.map((json) => AppNotification.fromJson(json)).toList();
+        });
+      }
+    } catch (e) {
+      print('Error fetching notifications: $e');
+    }
+  }
+  // ... _updateOrderStatus() ...
   Future<void> _updateOrderStatus(int orderId, String action) async {
     final url = Uri.parse('${ApiConfig.baseUrl}/api/orders/update-status');
     try {
@@ -95,11 +116,18 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
         if (data['status'] == 'success') {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(action == 'accept' ? 'รับออเดอร์สำเร็จ' : 'ทำรายการเสร็จสิ้น'),
+              content: Text(data['message'] ?? 'อัปเดตสถานะสำเร็จ'),
               backgroundColor: Colors.green,
             ),
           );
           fetchPendingOrders();
+        } else {
+           ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(data['message'] ?? 'เกิดข้อผิดพลาด'),
+              backgroundColor: Colors.red,
+            ),
+          );
         }
       }
     } catch (e) {
@@ -109,7 +137,12 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
 
   // --- UI Helper Methods (Dialogs) ---
 
+  // ... _showOrderDetails() ...
   void _showOrderDetails(Order order) {
+    // ✅ [ADD] ตรรกะสำหรับเช็คว่าเป็น Pre-order หรือไม่
+    final orderDateTime = DateTime.tryParse(order.orderDate);
+    final bool isPreOrder = orderDateTime != null && orderDateTime.isAfter(DateTime.now());
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -120,7 +153,8 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
             child: ListBody(
               children: <Widget>[
                 _buildDetailRow('ลูกค้า:', order.customerName),
-                _buildDetailRow('วันที่สั่ง:', order.orderDate),
+                // ✅ [RE-LOGIC] เปลี่ยนข้อความตามเงื่อนไข Pre-order
+                _buildDetailRow(isPreOrder ? 'วันที่จอง:' : 'วันที่สั่ง:', order.orderDate),
                 if (order.remarks != null && order.remarks!.isNotEmpty) _buildDetailRow('หมายเหตุ:', order.remarks!),
                 const Divider(height: 20, color: Colors.brown),
                 const Text('รายการสินค้า:', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Sarabun')),
@@ -152,6 +186,73 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
     );
   }
 
+  // ✅ [ADD] New dialog to show promotions
+ void _showNotificationsDialog() {
+    showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('การแจ้งเตือน', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Sarabun')),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: _notifications.isEmpty
+                  ? const Text('ไม่มีการแจ้งเตือนใหม่', style: TextStyle(fontFamily: 'Sarabun'))
+                  : ListView.builder( // ใช้ ListView.separated เพื่อเพิ่มเส้นคั่น
+                      shrinkWrap: true,
+                      itemCount: _notifications.length,
+                      itemBuilder: (context, index) {
+                        final notification = _notifications[index];
+                        return _buildNotificationTile(notification); // เรียกใช้ Widget แยก
+                      },
+                    ),
+            ),
+             actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('ปิด', style: TextStyle(fontFamily: 'Sarabun', color: Colors.teal)),
+              )
+            ],
+          );
+        });
+  }
+
+  // ✅ [ADD] สร้าง Widget แยกสำหรับแสดงผลแต่ละประเภทการแจ้งเตือน
+  Widget _buildNotificationTile(AppNotification notification) {
+    IconData icon;
+    Color color;
+
+    switch (notification.type) {
+      case NotificationType.newOrder:
+        icon = Icons.fiber_new_rounded;
+        color = Colors.amber.shade700;
+        break;
+      case NotificationType.upcomingPreorder:
+        icon = Icons.timer_outlined;
+        color = Colors.blue.shade700;
+        break;
+      case NotificationType.promotion:
+        icon = Icons.campaign_rounded;
+        color = Colors.green.shade600;
+        break;
+      case NotificationType.expiringStock: 
+      icon = Icons.warning_amber_rounded;
+      color = Colors.orange.shade800;
+      break;
+      default:
+        icon = Icons.notifications;
+        color = Colors.grey;
+    }
+
+    return ListTile(
+      leading: Icon(icon, color: color),
+      title: Text(notification.title, style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Sarabun')),
+      subtitle: Text(notification.subtitle, style: const TextStyle(fontFamily: 'Sarabun')),
+      dense: true,
+    );
+  }
+
+  // ... _showSlipDialog() ...
   void _showSlipDialog(String imageUrl) {
     showDialog(context: context, builder: (context) => AlertDialog(
           contentPadding: const EdgeInsets.all(12),
@@ -173,7 +274,7 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
           actions: [ TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('ปิด', style: TextStyle(fontFamily: 'Sarabun', color: Colors.teal)))],
         ));
   }
-
+  // ... _buildDetailRow() ...
   Widget _buildDetailRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -192,7 +293,8 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
   @override
   Widget build(BuildContext context) {
     final newOrders = pendingOrders.where((o) => o.emId == null).toList();
-    final myOrders = pendingOrders.where((o) => o.emId == _emId).toList();
+    final myMakingOrders = pendingOrders.where((o) => o.emId == _emId && o.receiveDate == null).toList();
+    final myAwaitingPickupOrders = pendingOrders.where((o) => o.emId == _emId && o.receiveDate != null && o.grabDate == null).toList();
 
     return Scaffold(
       backgroundColor: Colors.grey[50],
@@ -201,27 +303,54 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
         title: const Text('รายการออเดอร์', style: TextStyle(color: Colors.white, fontFamily: 'Sarabun')),
         backgroundColor: Colors.teal[700],
         iconTheme: const IconThemeData(color: Colors.white),
+        // ✅ [ADD] Add notification bell icon here
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.campaign_outlined, color: Colors.white),
+            onPressed: _showNotificationsDialog,
+            tooltip: 'การแจ้งเตือน',
+          ),
+        ],
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.teal))
           : RefreshIndicator(
               onRefresh: fetchPendingOrders,
-              child: (newOrders.isEmpty && myOrders.isEmpty)
-                  ? const Center(child: Text('ไม่มีรายการที่กำลังรอ...', style: TextStyle(fontSize: 18, color: Colors.grey)))
+              child: (newOrders.isEmpty && myMakingOrders.isEmpty && myAwaitingPickupOrders.isEmpty)
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.check_circle_outline, size: 80, color: Colors.grey[400]),
+                          const SizedBox(height: 16),
+                          const Text('ไม่มีรายการที่กำลังรอ...', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                        ],
+                      ),
+                    )
                   : ListView(
                       padding: const EdgeInsets.all(8),
                       children: [
                         _OrderSection(
                           title: 'ออเดอร์ใหม่',
                           orders: newOrders,
+                          action: 'accept',
                           onActionPressed: (orderId) => _updateOrderStatus(orderId, 'accept'),
                           onDetailsPressed: _showOrderDetails,
                         ),
                         const SizedBox(height: 16),
                         _OrderSection(
-                          title: 'ออเดอร์ของฉัน',
-                          orders: myOrders,
+                          title: 'กำลังดำเนินการ',
+                          orders: myMakingOrders,
+                          action: 'complete',
                           onActionPressed: (orderId) => _updateOrderStatus(orderId, 'complete'),
+                          onDetailsPressed: _showOrderDetails,
+                        ),
+                        const SizedBox(height: 16),
+                        _OrderSection(
+                          title: 'รอรับสินค้า',
+                          orders: myAwaitingPickupOrders,
+                          action: 'pickup',
+                          onActionPressed: (orderId) => _updateOrderStatus(orderId, 'pickup'),
                           onDetailsPressed: _showOrderDetails,
                         ),
                       ],
@@ -231,8 +360,9 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
   }
 }
 
-// --- Reusable Widget for the Drawer ---
+// --- Reusable Widgets ---
 
+// ... _EmployeeDrawer() ...
 class _EmployeeDrawer extends StatelessWidget {
   const _EmployeeDrawer({required this.emName, required this.emEmail, this.emId});
 
@@ -279,26 +409,24 @@ class _EmployeeDrawer extends StatelessWidget {
     );
   }
 }
-
-// --- Reusable Widget for an Order Section ---
-
+// ... _OrderSection() ...
 class _OrderSection extends StatelessWidget {
   final String title;
   final List<Order> orders;
+  final String action;
   final Function(int) onActionPressed;
   final Function(Order) onDetailsPressed;
-  
+
   const _OrderSection({
     required this.title,
     required this.orders,
+    required this.action,
     required this.onActionPressed,
     required this.onDetailsPressed,
   });
 
   @override
   Widget build(BuildContext context) {
-    final String action = title == 'ออเดอร์ใหม่' ? 'accept' : 'complete';
-    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -307,7 +435,7 @@ class _OrderSection extends StatelessWidget {
           child: Text('$title (${orders.length})', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.teal[800])),
         ),
         if (orders.isEmpty)
-          const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 16), child: Text('ไม่มีรายการ', style: TextStyle(color: Colors.grey)))
+          const Padding(padding: EdgeInsets.fromLTRB(16, 0, 12, 16), child: Text('ไม่มีรายการ', style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)))
         else
           ...orders.map((order) => _OrderCard(
             order: order,
@@ -319,10 +447,15 @@ class _OrderSection extends StatelessWidget {
     );
   }
 }
+// ... _OrderCard() ...
+class _ButtonConfig {
+  final String text;
+  final IconData icon;
+  final Color color;
+  _ButtonConfig(this.text, this.icon, this.color);
+}
 
-// --- Reusable Widget for an Order Card ---
-
-class _OrderCard extends StatelessWidget {
+class _OrderCard extends StatefulWidget {
   final Order order;
   final String action;
   final VoidCallback onActionPressed;
@@ -336,7 +469,47 @@ class _OrderCard extends StatelessWidget {
   });
 
   @override
+  State<_OrderCard> createState() => _OrderCardState();
+}
+
+class _OrderCardState extends State<_OrderCard> {
+  bool _isButtonDisabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.action == 'complete') {
+      _isButtonDisabled = true;
+      Timer(const Duration(seconds: 3), () {
+        if (mounted) {
+          setState(() {
+            _isButtonDisabled = false;
+          });
+        }
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final _ButtonConfig buttonConfig;
+    switch (widget.action) {
+      case 'accept':
+        buttonConfig = _ButtonConfig('รับออเดอร์', Icons.check_circle_outline, Colors.amber[700]!);
+        break;
+      case 'complete':
+        buttonConfig = _ButtonConfig('ทำรายการเสร็จสิ้น', Icons.done_all, Colors.green);
+        break;
+      case 'pickup':
+         buttonConfig = _ButtonConfig('ลูกค้ารับแล้ว', Icons.check_circle, Colors.blue[700]!);
+        break;
+      default:
+        buttonConfig = _ButtonConfig('Error', Icons.error, Colors.red);
+    }
+
+    final orderDateTime = DateTime.tryParse(widget.order.orderDate);
+    final bool isPreOrder = orderDateTime != null && orderDateTime.isAfter(DateTime.now());
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -349,35 +522,50 @@ class _OrderCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('คำสั่งซื้อ #${order.orderId}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                Text('฿${order.totalPrice.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal)),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text('คำสั่งซื้อ #${widget.order.orderId}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(width: 8),
+                    if(isPreOrder)
+                      const Text(
+                        '(pre-order)',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Color.fromARGB(255, 243, 33, 33),
+                        ),
+                      ),
+                  ],
+                ),
+                Text('฿${widget.order.totalPrice.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.teal)),
               ],
             ),
             const SizedBox(height: 4),
-            Text('ลูกค้า: ${order.customerName}', style: TextStyle(color: Colors.grey[600])),
+            Row(
+              children: [
+                Expanded(child: Text('ลูกค้า: ${widget.order.customerName}', style: TextStyle(color: Colors.grey[600]), overflow: TextOverflow.ellipsis)),
+              ],
+            ),
             const Divider(height: 24),
-            ...order.orderDetails.map((detail) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4.0),
-                  child: Text('- ${detail.proName} x${detail.amount}'),
-                )),
-            const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 TextButton.icon(
                   icon: const Icon(Icons.info_outline, size: 20),
                   label: const Text('ดูรายละเอียด'),
-                  onPressed: onDetailsPressed,
+                  onPressed: widget.onDetailsPressed,
                   style: TextButton.styleFrom(foregroundColor: Colors.grey[600]),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton.icon(
-                  icon: Icon(action == 'accept' ? Icons.check_circle_outline : Icons.done_all, size: 20),
-                  label: Text(action == 'accept' ? 'รับออเดอร์' : 'ทำเสร็จแล้ว'),
-                  onPressed: onActionPressed,
+                  onPressed: (widget.action == 'complete' && _isButtonDisabled) ? null : widget.onActionPressed,
+                  icon: Icon(buttonConfig.icon, size: 20),
+                  label: Text(buttonConfig.text),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: action == 'accept' ? Colors.amber[700] : Colors.green,
+                    backgroundColor: buttonConfig.color,
                     foregroundColor: Colors.white,
+                    disabledBackgroundColor: Colors.grey[400],
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),

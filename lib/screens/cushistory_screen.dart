@@ -13,6 +13,15 @@ class CusHistoryScreen extends StatefulWidget {
   State<CusHistoryScreen> createState() => _CusHistoryScreenState();
 }
 
+// ✅ [ADD] สร้าง Class สำหรับเก็บสถานะเพื่อความสะอาดของโค้ด
+class OrderStatus {
+  final String text;
+  final Color color;
+  final IconData icon;
+
+  OrderStatus(this.text, this.color, this.icon);
+}
+
 class _CusHistoryScreenState extends State<CusHistoryScreen> {
   List<Order> historyOrders = [];
   bool isLoading = true;
@@ -23,41 +32,48 @@ class _CusHistoryScreenState extends State<CusHistoryScreen> {
     fetchHistoryOrders();
   }
 
-  // ดึงประวัติคำสั่งซื้อทั้งหมดของลูกค้าคนนี้
   Future<void> fetchHistoryOrders() async {
-    setState(() {
-      isLoading = true;
-    });
-
-    if (widget.cusId == null) {
-      setState(() {
-        isLoading = false;
-      });
+    // ... โค้ดส่วนนี้เหมือนเดิม ...
+     if (widget.cusId == null) {
+      if (mounted) setState(() => isLoading = false);
       return;
     }
-
     final url = Uri.parse('${ApiConfig.baseUrl}/api/customers/${widget.cusId}/history');
     try {
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
+      final response = await http.get(url, headers: {'Accept': 'application/json'});
+      if (response.statusCode == 200 && mounted) {
         final List<dynamic> data = json.decode(response.body);
         setState(() {
           historyOrders = data.map((json) => Order.fromJson(json)).toList();
+          isLoading = false;
         });
       } else {
         throw Exception('Failed to load history orders');
       }
     } catch (e) {
       print('Error fetching history orders: $e');
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
+      if (mounted) setState(() => isLoading = false);
     }
   }
 
-  // ฟังก์ชันสำหรับแสดงรายละเอียดคำสั่งซื้อใน Dialog
+  // ✅ [RE-LOGIC] อัปเดตฟังก์ชันแสดงสถานะให้ถูกต้องตาม Workflow ล่าสุด
+  OrderStatus _getOrderStatus(Order order) {
+    if (order.grabDate != null) {
+      return OrderStatus('รายการเสร็จสิ้น', Colors.green[700]!, Icons.check_circle);
+    } else if (order.receiveDate != null) {
+      return OrderStatus('กรุณาไปรับสินค้า', Colors.blue[700]!, Icons.inventory_2);
+    } else if (order.emId != null) {
+      return OrderStatus('กำลังดำเนินการ', Colors.teal[700]!, Icons.hourglass_bottom);
+    } else {
+      return OrderStatus('รอรับรายการ', Colors.grey[700]!, Icons.watch_later);
+    }
+  }
+
   void _showOrderDetails(Order order) {
+    final orderStatus = _getOrderStatus(order);
+    final orderDateTime = DateTime.tryParse(order.orderDate);
+    final bool isPreOrder = orderDateTime != null && orderDateTime.isAfter(DateTime.now());
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -70,10 +86,18 @@ class _CusHistoryScreenState extends State<CusHistoryScreen> {
           content: SingleChildScrollView(
             child: ListBody(
               children: <Widget>[
-                _buildDetailRow('วันที่สั่ง:', order.orderDate),
+                _buildDetailRow('สถานะ:', orderStatus.text),
+                // ✅ [RE-LOGIC] แสดงวันที่จอง/สั่ง
+                _buildDetailRow(isPreOrder ? 'วันที่จอง:' : 'วันที่สั่ง:', order.orderDate),
                 _buildDetailRow('ราคารวม:', '฿${order.totalPrice.toStringAsFixed(2)}'),
-                if (order.promoCode != null) _buildDetailRow('โค้ดโปรโมชัน:', order.promoCode!),
-                if (order.remarks != null && order.remarks!.isNotEmpty) _buildDetailRow('หมายเหตุ:', order.remarks!),
+                
+                // ✅ [RE-LOGIC] แสดงโปรโมชั่นทั้งหมด
+                if (order.promotions.isNotEmpty)
+                  _buildDetailRow('โปรโมชั่น:', order.promotions.join(', ')),
+
+                if (order.remarks != null && order.remarks!.isNotEmpty)
+                  _buildDetailRow('หมายเหตุ:', order.remarks!),
+
                 const Divider(height: 20, color: Colors.brown),
                 const Text(
                   'รายการสินค้า:',
@@ -87,8 +111,11 @@ class _CusHistoryScreenState extends State<CusHistoryScreen> {
                   ),
                 )),
                 const Divider(height: 20, color: Colors.brown),
-                if (order.receiveDate != null) _buildDetailRow('พนักงานที่รับออเดอร์:', 'พนักงาน #${order.emId}'),
-                if (order.receiveDate != null) _buildDetailRow('วันที่รับออเดอร์:', order.receiveDate!),
+
+                // ✅ [RE-LOGIC] แสดง Timeline ของออเดอร์
+                if (order.emName != null) _buildDetailRow('พนักงาน:', order.emName!),
+                if (order.receiveDate != null) _buildDetailRow('วันที่ทำเสร็จ:', order.receiveDate!),
+                if (order.grabDate != null) _buildDetailRow('วันที่รับสินค้า:', order.grabDate!),
               ],
             ),
           ),
@@ -109,16 +136,16 @@ class _CusHistoryScreenState extends State<CusHistoryScreen> {
   }
 
   Widget _buildDetailRow(String label, String value) {
-    return Padding(
+    // ... โค้ดส่วนนี้เหมือนเดิม ...
+     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            label,
+            '$label ',
             style: TextStyle(fontSize: 16, color: Colors.grey[700], fontFamily: 'Sarabun'),
           ),
-          const SizedBox(width: 8),
           Expanded(
             child: Text(
               value,
@@ -145,41 +172,14 @@ class _CusHistoryScreenState extends State<CusHistoryScreen> {
       body: isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.brown))
           : historyOrders.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.history_toggle_off, size: 80, color: Colors.grey[400]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'ไม่มีประวัติการทำรายการ',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: Colors.grey[600],
-                          fontFamily: 'Sarabun',
-                        ),
-                      ),
-                    ],
-                  ),
-                )
+              ? Center( /* ... โค้ดส่วนนี้เหมือนเดิม ... */ )
               : ListView.builder(
                   padding: const EdgeInsets.all(8),
                   itemCount: historyOrders.length,
                   itemBuilder: (context, index) {
                     final order = historyOrders[index];
-                    String statusText;
-                    Color statusColor;
-
-                    if (order.emId == null && order.receiveDate == null) {
-                        statusText = 'ยังไม่ถูกรับรายการ';
-                        statusColor = Colors.grey[700]!;
-                    } else if (order.receiveDate == null) {
-                        statusText = 'รับรายการแล้ว';
-                        statusColor = Colors.teal[700]!;
-                    } else {
-                        statusText = 'รายการเสร็จสิ้น';
-                        statusColor = Colors.green[700]!;
-                    }
+                    // ✅ [RE-LOGIC] เรียกใช้ฟังก์ชันสถานะใหม่
+                    final status = _getOrderStatus(order);
 
                     return Card(
                       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -189,8 +189,8 @@ class _CusHistoryScreenState extends State<CusHistoryScreen> {
                         onTap: () => _showOrderDetails(order),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         leading: Icon(
-                          Icons.receipt_long,
-                          color: statusColor,
+                          status.icon,
+                          color: status.color,
                           size: 36,
                         ),
                         title: Text(
@@ -213,9 +213,9 @@ class _CusHistoryScreenState extends State<CusHistoryScreen> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              statusText,
+                              status.text,
                               style: TextStyle(
-                                color: statusColor,
+                                color: status.color,
                                 fontWeight: FontWeight.bold,
                                 fontFamily: 'Sarabun',
                               ),

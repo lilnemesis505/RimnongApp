@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:rimnongapp/config/api_config.dart';
 import 'package:rimnongapp/models/product.dart';
+import 'package:rimnongapp/models/notification.dart'; 
 import 'package:rimnongapp/screens/auth/login_screen.dart';
 import 'package:rimnongapp/screens/cart_screen.dart';
 import 'package:rimnongapp/screens/cushistory_screen.dart';
@@ -16,14 +17,17 @@ class CustomerScreen extends StatefulWidget {
 }
 
 class _CustomerScreenState extends State<CustomerScreen> {
+  // --- State Variables ---
   List<Product> products = [];
   Map<Product, int> cart = {};
+  List<AppNotification> _notifications = [];
   bool isLoading = true;
   int? _cusId;
   String _cusName = 'ลูกค้า';
   String _cusEmail = '';
-  Timer? _orderStatusTimer;
+  Timer? _notificationTimer;
 
+  // --- Lifecycle Methods ---
   @override
   void initState() {
     super.initState();
@@ -35,14 +39,20 @@ class _CustomerScreenState extends State<CustomerScreen> {
 
   @override
   void dispose() {
-    _orderStatusTimer?.cancel();
+    _notificationTimer?.cancel();
     super.dispose();
   }
 
+  // --- Data Fetching & Core Logic ---
   void _initializeScreen() {
     fetchProducts();
     if (_cusId != null) {
       _fetchCustomerData(_cusId!);
+      _fetchNotifications();
+      // ตั้งเวลาดึงข้อมูลแจ้งเตือนทุกๆ 30 วินาที
+      _notificationTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+        _fetchNotifications();
+      });
     }
   }
 
@@ -56,8 +66,6 @@ class _CustomerScreenState extends State<CustomerScreen> {
           products = data.map((json) => Product.fromJson(json)).toList();
           isLoading = false;
         });
-      } else {
-        throw Exception('Failed to load products');
       }
     } catch (e) {
       print('Error fetching products: $e');
@@ -83,38 +91,129 @@ class _CustomerScreenState extends State<CustomerScreen> {
     }
   }
 
+  // ✅ [NEW] ฟังก์ชันดึงข้อมูลการแจ้งเตือนสำหรับลูกค้า
+  Future<void> _fetchNotifications() async {
+    if (_cusId == null) return;
+    final url = Uri.parse('${ApiConfig.baseUrl}/api/notifications?cus_id=$_cusId');
+    try {
+      final response = await http.get(url, headers: {'Accept': 'application/json'});
+      if (response.statusCode == 200 && mounted) {
+        final List<dynamic> data = json.decode(response.body);
+        setState(() {
+          _notifications = data.map((json) => AppNotification.fromJson(json)).toList();
+        });
+      }
+    } catch (e) {
+      print('Error fetching customer notifications: $e');
+    }
+  }
+
   void addToCart(Product product) {
     setState(() {
       cart.update(product, (value) => value + 1, ifAbsent: () => 1);
     });
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${product.proName} ถูกเพิ่มในตะกร้า'), duration: const Duration(seconds: 1)),
+      SnackBar(
+        content: Text('${product.proName} ถูกเพิ่มในตะกร้า'),
+        duration: const Duration(seconds: 1),
+        backgroundColor: Colors.brown[600],
+      ),
     );
   }
 
+  // ✅ [NEW] ฟังก์ชันสำหรับแสดง Dialog การแจ้งเตือน
+  void _showNotificationsDialog() {
+    showDialog(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('การแจ้งเตือน', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Sarabun')),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: _notifications.isEmpty
+                  ? const Text('ไม่มีการแจ้งเตือนใหม่', style: TextStyle(fontFamily: 'Sarabun'))
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _notifications.length,
+                      itemBuilder: (context, index) {
+                        final notification = _notifications[index];
+                        return _buildNotificationTile(notification);
+                      },
+                    ),
+            ),
+             actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('ปิด', style: TextStyle(fontFamily: 'Sarabun', color: Colors.brown)),
+              )
+            ],
+          );
+        });
+  }
+
+  // ✅ [NEW] Widget สำหรับสร้างรายการแจ้งเตือนแต่ละอัน
+  Widget _buildNotificationTile(AppNotification notification) {
+    IconData icon;
+    Color color;
+    switch (notification.type) {
+      case NotificationType.promotion:
+        icon = Icons.campaign_rounded;
+        color = Colors.green.shade600;
+        break;
+      case NotificationType.readyForPickup:
+        icon = Icons.inventory_2_rounded;
+        color = Colors.blue.shade700;
+        break;
+      default:
+        icon = Icons.notifications;
+        color = Colors.grey;
+    }
+    return ListTile(
+      leading: Icon(icon, color: color),
+      title: Text(notification.title, style: const TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Sarabun')),
+      subtitle: Text(notification.subtitle, style: const TextStyle(fontFamily: 'Sarabun')),
+      dense: true,
+    );
+  }
+
+  // --- Main Build Method ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey[50],
       drawer: _CustomerDrawer(cusName: _cusName, cusEmail: _cusEmail, cusId: _cusId, cart: cart),
       appBar: AppBar(
-        title: const Text('เมนูเครื่องดื่ม', style: TextStyle(color: Colors.white, fontFamily: 'Sarabun')),
+        title: const Text('เมนูเครื่องดื่ม', style: TextStyle(color: Colors.white, fontFamily: 'Sarabun', fontWeight: FontWeight.bold)),
         backgroundColor: Colors.brown[700],
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
+          // ✅ [NEW] เพิ่มปุ่มแจ้งเตือนข้างๆ ตะกร้า
           IconButton(
-            icon: const Icon(Icons.shopping_cart),
+            icon: Icon(
+              _notifications.isEmpty 
+                  ? Icons.notifications_none_outlined 
+                  : Icons.notifications_active,
+              color: Colors.white,
+            ),
+            onPressed: _showNotificationsDialog,
+            tooltip: 'การแจ้งเตือน',
+          ),
+          IconButton(
+            icon: const Icon(Icons.shopping_cart_outlined),
             onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CartScreen(cart: cart, cusId: _cusId))),
           ),
         ],
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.brown))
-          : _ProductGrid(products: products, onAddToCart: addToCart),
+          : RefreshIndicator(
+            onRefresh: fetchProducts,
+            child: _ProductGrid(products: products, onAddToCart: addToCart)
+          ),
     );
   }
 }
-
 class _CustomerDrawer extends StatelessWidget {
   const _CustomerDrawer({
     required this.cusName,

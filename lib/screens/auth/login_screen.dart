@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:rimnongapp/screens/auth/register_screen.dart';
 import 'package:rimnongapp/config/api_config.dart';
+import 'package:rimnongapp/screens/auth/forgot_password_screen.dart'; // 👈 [เพิ่ม] import หน้าลืมรหัสผ่าน
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -95,7 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+            children: [ // 👈 [แก้ไข] children เริ่มตรงนี้
               Text(
                 "Rimnong Coffee",
                 style: TextStyle(
@@ -193,7 +194,25 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ),
-            ],
+
+              // [แก้ไข] 👈 ย้ายปุ่มนี้เข้ามาใน children
+              TextButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ForgotPasswordScreen()),
+                  );
+                },
+                child: Text(
+                  "ลืมรหัสผ่าน?",
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey[600], // สีเทา
+                    fontFamily: 'Sarabun',
+                  ),
+                ),
+              ),
+            ], // 👈 [แก้ไข] children ปิดตรงนี้
           ),
         ),
       ),

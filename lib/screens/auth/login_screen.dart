@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:rimnongapp/screens/auth/register_screen.dart';
 import 'package:rimnongapp/config/api_config.dart';
-import 'package:rimnongapp/screens/auth/forgot_password_screen.dart'; // 👈 [เพิ่ม] import หน้าลืมรหัสผ่าน
+import 'package:rimnongapp/screens/auth/forgot_password_screen.dart'; 
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -38,20 +38,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
       setState(() => isLoading = false);
 
-      // Try decoding JSON safely
       final data = json.decode(response.body.trim());
       print('Decoded JSON: $data');
 
       if (data['status'] == 'success') {
         final role = data['role'];
-        final id = data['id']; // ได้รับ ID จากการล็อกอิน
+        final id = data['id']; 
 
         if (role == 'customer') {
-          Navigator.pushReplacementNamed(context, '/customer', arguments: id); // ส่ง ID ไปยัง CustomerScreen
+          Navigator.pushReplacementNamed(context, '/customer', arguments: id); 
         } else if (role == 'employee') {
-          Navigator.pushReplacementNamed(context, '/employee', arguments: id); // ส่ง ID ไปยัง EmployeeScreen
+          Navigator.pushReplacementNamed(context, '/employee', arguments: id); 
         }
       } else {
+        // [ถูกต้อง] 👈 นี่คือส่วนแจ้งเตือน Error (สำหรับหน้า Login)
         showDialog(
           context: context,
           builder: (_) => AlertDialog(
@@ -70,6 +70,7 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => isLoading = false);
       print('Login Error: $e');
 
+      // [ถูกต้อง] 👈 นี่คือส่วนแจ้งเตือน Error "เชื่อมต่อไม่ได้" (สำหรับหน้า Login)
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
@@ -88,21 +89,22 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // (โค้ด Build ... เหมือนเดิม)
     return Scaffold(
-      backgroundColor: Colors.grey[50], // พื้นหลังสีอ่อน
+      backgroundColor: Colors.grey[50], 
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [ // 👈 [แก้ไข] children เริ่มตรงนี้
+            children: [ 
               Text(
                 "Rimnong Coffee",
                 style: TextStyle(
                   fontSize: 32,
                   fontWeight: FontWeight.bold,
-                  color: Colors.brown[800], // สีชื่อร้าน
+                  color: Colors.brown[800], 
                   fontFamily: 'Sarabun',
                 ),
                 textAlign: TextAlign.center,
@@ -195,7 +197,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ),
 
-              // [แก้ไข] 👈 ย้ายปุ่มนี้เข้ามาใน children
               TextButton(
                 onPressed: () {
                   Navigator.push(
@@ -207,12 +208,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   "ลืมรหัสผ่าน?",
                   style: TextStyle(
                     fontSize: 16,
-                    color: Colors.grey[600], // สีเทา
+                    color: Colors.grey[600], 
                     fontFamily: 'Sarabun',
                   ),
                 ),
               ),
-            ], // 👈 [แก้ไข] children ปิดตรงนี้
+            ], 
           ),
         ),
       ),

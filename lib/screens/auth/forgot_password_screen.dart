@@ -52,9 +52,20 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   void _showErrorDialog(String message) {
-     // (โค้ด _showErrorDialog ... เหมือนเดิม)
+     showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("ผิดพลาด", style: TextStyle(fontFamily: 'Sarabun')),
+        content: Text(message, style: const TextStyle(fontFamily: 'Sarabun')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("ตกลง", style: TextStyle(fontFamily: 'Sarabun', color: Colors.brown)),
+          ),
+        ],
+      ),
+    );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -77,7 +88,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             
             // [ลบ] 5. ลบ DropdownButtonFormField ของ userType
             
-            // 2. ช่องกรอกอีเมล
             TextFormField(
               controller: emailCtrl,
               style: const TextStyle(fontFamily: 'Sarabun'),
@@ -93,7 +103,6 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
             ),
             const SizedBox(height: 32),
             
-            // 3. ปุ่มส่ง
             ElevatedButton(
               onPressed: isLoading ? null : requestOtp,
               style: ElevatedButton.styleFrom(

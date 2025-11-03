@@ -1,4 +1,4 @@
-import 'package:pinput/pinput.dart'; // 👈 1. Import Pinput
+import 'package:pinput/pinput.dart'; 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -7,12 +7,12 @@ import 'package:rimnongapp/screens/auth/reset_password_screen.dart';
 
 class VerifyOtpScreen extends StatefulWidget {
   final String email;
-  // [ลบ] 2. ลบ userType ออก
+  // [ลบ] 1. ลบ userType ออก
   
   const VerifyOtpScreen({
     super.key, 
     required this.email, 
-    // [ลบ] 3. ลบ userType ออก
+    // [ลบ] 2. ลบ userType ออก
   });
 
   @override
@@ -33,7 +33,7 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
         body: {
           'email': widget.email,
           'otp': otpCtrl.text,
-          // [ลบ] 4. ลบ user_type ออก
+          // [ลบ] 3. ลบ user_type ออก
         },
       );
 
@@ -47,7 +47,7 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
             builder: (_) => ResetPasswordScreen(
               email: widget.email,
               otp: otpCtrl.text,
-              // [ลบ] 5. ลบ user_type ออก
+              // [ลบ] 4. ลบ user_type ออก
             ),
           ),
         );
@@ -66,7 +66,6 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ธีมสำหรับ Pinput (สวยงาม)
     final defaultPinTheme = PinTheme(
       width: 56,
       height: 56,
@@ -95,7 +94,7 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
             ),
             const SizedBox(height: 24),
             
-            // [แก้ไข] 6. เปลี่ยนมาใช้ Pinput
+            // [แก้ไข] 5. ใช้ Pinput
             Pinput(
               controller: otpCtrl,
               length: 6,
@@ -107,7 +106,7 @@ class _VerifyOtpScreenState extends State<VerifyOtpScreen> {
                 ),
               ),
               submittedPinTheme: defaultPinTheme,
-              onCompleted: (pin) => verifyOtp(), // 👈 กดครบ 6 ตัว ยืนยันอัตโนมัติ
+              onCompleted: (pin) => verifyOtp(),
             ),
             const SizedBox(height: 32),
             

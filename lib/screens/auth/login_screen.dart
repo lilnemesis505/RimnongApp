@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:rimnongapp/screens/auth/register_screen.dart';
 import 'package:rimnongapp/config/api_config.dart';
 import 'package:rimnongapp/screens/auth/forgot_password_screen.dart'; 
@@ -17,31 +18,69 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController passwordCtrl = TextEditingController();
   bool isLoading = false;
 
+  // ⬇️ [เพิ่ม] 2. เพิ่มตัวแปร
+  bool _rememberMe = false;
+  final _storage = const FlutterSecureStorage();
+
+  // ⬇️ [เพิ่ม] 3. เพิ่ม initState
+  @override
+  void initState() {
+    super.initState();
+    // เมื่อหน้าจอนี้โหลด ให้พยายามดึงข้อมูลที่เคยบันทึกไว้
+    _tryAutoLogin();
+  }
+
+  // ฟังก์ชันสำหรับพยายาม auto-login
+  Future<void> _tryAutoLogin() async {
+    // อ่านค่า username และ password จาก storage
+    final username = await _storage.read(key: 'username');
+    final password = await _storage.read(key: 'password');
+
+    // ถ้ามีข้อมูลอยู่ (เคยติ๊ก Remember Me)
+    if (username != null && password != null) {
+      setState(() {
+        usernameCtrl.text = username;
+        passwordCtrl.text = password;
+        _rememberMe = true;
+        isLoading = true; // แสดงตัวหมุน
+      });
+      // สั่ง login อัตโนมัติ
+      login();
+    }
+  }
+
   Future<void> login() async {
-    setState(() => isLoading = true);
+    // ถ้าไม่ได้มาจาก auto-login ให้ set isLoading เอง
+    if (!isLoading) {
+      setState(() => isLoading = true);
+    }
 
     try {
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}/api/login'),
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: {
-          'username': usernameCtrl.text,
-          'password': passwordCtrl.text,
-        },
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {'username': usernameCtrl.text, 'password': passwordCtrl.text},
       );
 
-      print('Status Code: ${response.statusCode}');
-      print('Raw Body: ${response.body}');
-      print('Body Type: ${response.body.runtimeType}');
+      // (print logs เหมือนเดิม)
 
-      setState(() => isLoading = false);
+      if (!mounted) return; // เช็คเผื่อผู้ใช้ปิดหน้าไปก่อน
 
       final data = json.decode(response.body.trim());
-      print('Decoded JSON: $data');
 
       if (data['status'] == 'success') {
+        
+        // ⬇️ [แก้ไข] 5. ตรรกะการบันทึกข้อมูล
+        if (_rememberMe) {
+          // ถ้าติ๊ก "จดจำ" ให้บันทึก
+          await _storage.write(key: 'username', value: usernameCtrl.text);
+          await _storage.write(key: 'password', value: passwordCtrl.text);
+        } else {
+          // ถ้าไม่ติ๊ก "จดจำ" ให้ลบข้อมูลเก่าทิ้ง (สำคัญ)
+          await _storage.delete(key: 'username');
+          await _storage.delete(key: 'password');
+        }
+
         final role = data['role'];
         final id = data['id']; 
 
@@ -51,51 +90,42 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.pushReplacementNamed(context, '/employee', arguments: id); 
         }
       } else {
-        // [ถูกต้อง] 👈 นี่คือส่วนแจ้งเตือน Error (สำหรับหน้า Login)
+        // (ส่วน showDialog Error เหมือนเดิม)
+        setState(() => isLoading = false); // หยุดหมุนเมื่อ login ไม่ผ่าน
         showDialog(
           context: context,
           builder: (_) => AlertDialog(
             title: const Text("เข้าสู่ระบบไม่สำเร็จ", style: TextStyle(fontFamily: 'Sarabun')),
             content: Text(data['message'], style: const TextStyle(fontFamily: 'Sarabun')),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("ตกลง", style: TextStyle(fontFamily: 'Sarabun', color: Colors.brown)),
-              ),
-            ],
+            actions: [ TextButton(onPressed: () => Navigator.pop(context), child: const Text("ตกลง", style: TextStyle(fontFamily: 'Sarabun', color: Colors.brown))), ],
           ),
         );
       }
     } catch (e) {
       setState(() => isLoading = false);
       print('Login Error: $e');
-
-      // [ถูกต้อง] 👈 นี่คือส่วนแจ้งเตือน Error "เชื่อมต่อไม่ได้" (สำหรับหน้า Login)
+      // (ส่วน showDialog Error เหมือนเดิม)
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
           title: const Text("ข้อผิดพลาด", style: TextStyle(fontFamily: 'Sarabun')),
           content: const Text("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้", style: TextStyle(fontFamily: 'Sarabun')),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("ตกลง", style: TextStyle(fontFamily: 'Sarabun', color: Colors.brown)),
-            ),
-          ],
+          actions: [ TextButton(onPressed: () => Navigator.pop(context), child: const Text("ตกลง", style: TextStyle(fontFamily: 'Sarabun', color: Colors.brown))), ],
         ),
       );
     }
+    // [ลบ] setState(() => isLoading = false); บรรทัดนี้ (ถ้ามี) เพราะเราย้ายไปจัดการใน if/else/catch แล้ว
   }
 
   @override
   Widget build(BuildContext context) {
-    // (โค้ด Build ... เหมือนเดิม)
     return Scaffold(
       backgroundColor: Colors.grey[50], 
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
+            // ... (โค้ด Text 'Rimnong Coffee' และ 'ยินดีต้อนรับ') ...
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [ 
@@ -120,7 +150,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 48),
-              // Username Field
+
+            // ... (TextFormField Username และ Password เหมือนเดิม) ...
+             // Username Field
               TextFormField(
                 controller: usernameCtrl,
                 style: const TextStyle(fontFamily: 'Sarabun'),
@@ -154,8 +186,26 @@ class _LoginScreenState extends State<LoginScreen> {
                   fillColor: Colors.brown[50],
                 ),
               ),
-              const SizedBox(height: 32),
-              // Login Button
+            // --- ⬇️ [เพิ่ม] 4. เพิ่ม Checkbox ---
+              CheckboxListTile(
+                value: _rememberMe,
+                onChanged: (bool? value) {
+                  setState(() {
+                    _rememberMe = value ?? false;
+                  });
+                },
+                title: Text(
+                  "จดจำการเข้าสู่ระบบ",
+                  style: TextStyle(fontFamily: 'Sarabun', color: Colors.brown[700]),
+                ),
+                controlAffinity: ListTileControlAffinity.leading, // ให้ Checkbox อยู่ด้านซ้าย
+                contentPadding: EdgeInsets.zero,
+                activeColor: Colors.brown,
+              ),
+            // --- จบส่วน Checkbox ---
+
+              const SizedBox(height: 16), // [ปรับ] ลดระยะห่าง
+              // Login Button (เหมือนเดิม)
               ElevatedButton(
                 onPressed: isLoading ? null : login,
                 style: ElevatedButton.styleFrom(
@@ -178,7 +228,8 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
               ),
-              const SizedBox(height: 16),
+              // ... (ปุ่ม Register และ Forgot Password เหมือนเดิม) ...
+               const SizedBox(height: 16),
               // Register Button
               TextButton(
                 onPressed: () {
